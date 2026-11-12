@@ -1,0 +1,12 @@
+node_modules
+dist
+.next
+*.tsbuildinfo
+*.traineddata
+uploads
+.env
+.env.local
+*.log
+coverage
+.turbo
+apps/api/uploads

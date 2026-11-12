@@ -1,0 +1,348 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  USER
+}
+
+enum Plan {
+  PERSONAL
+  TEAM
+}
+
+enum CardStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum CardVisibility {
+  PRIVATE
+  TEAM
+  PUBLIC
+}
+
+enum ScanStatus {
+  REVIEW
+  SAVED
+  REJECTED
+}
+
+enum AnalyticsType {
+  VIEW
+  SHARE
+  SCAN
+  DOWNLOAD
+  SAVE
+  ACTIVITY
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  passwordHash  String
+  name          String
+  nameZh        String?
+  title         String?
+  phone         String?
+  avatarUrl     String?
+  locale        String         @default("en")
+  mfaEnabled    Boolean        @default(false)
+  mfaSecretEnc  String?
+  feishuOpenId  String?
+  feishuUnionId String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  memberships   Membership[]
+  refreshTokens RefreshToken[]
+  cards         Card[]
+  contacts      Contact[]      @relation("ContactOwner")
+  scans         ScanItem[]
+  teamMembers   TeamMember[]
+  auditLogs     AuditLog[]
+  approvals     ApprovalRequest[] @relation("ApprovalRequester")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Workspace {
+  id                String              @id @default(cuid())
+  name              String
+  slug              String              @unique
+  plan              Plan                @default(PERSONAL)
+  logoUrl           String?
+  storageUsedBytes  Int                 @default(0)
+  storageLimitBytes Int                 @default(524288000)
+  feishuTenantKey   String?
+  createdAt         DateTime            @default(now())
+  memberships       Membership[]
+  departments       Department[]
+  teams             Team[]
+  cards             Card[]
+  contacts          Contact[]
+  signatures        Signature[]
+  backgrounds       VirtualBackground[]
+  scans             ScanItem[]
+  events            AnalyticsEvent[]
+  audits            AuditLog[]
+  files             StoredFile[]
+  approvals         ApprovalRequest[]
+}
+
+model Membership {
+  id           String      @id @default(cuid())
+  userId       String
+  workspaceId  String
+  role         Role
+  departmentId String?
+  title        String?
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  @@unique([userId, workspaceId])
+}
+
+model Department {
+  id                 String       @id @default(cuid())
+  workspaceId        String
+  name               String
+  parentId           String?
+  feishuDepartmentId String?
+  workspace          Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent             Department?  @relation("DeptTree", fields: [parentId], references: [id])
+  children           Department[] @relation("DeptTree")
+  members            Membership[]
+  teams              Team[]
+}
+
+model Team {
+  id           String       @id @default(cuid())
+  workspaceId  String
+  departmentId String?
+  name         String
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  department   Department?  @relation(fields: [departmentId], references: [id])
+  members      TeamMember[]
+}
+
+model TeamMember {
+  teamId String
+  userId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, userId])
+}
+
+model Card {
+  id           String           @id @default(cuid())
+  workspaceId  String
+  ownerId      String
+  status       CardStatus       @default(ACTIVE)
+  visibility   CardVisibility   @default(PRIVATE)
+  template     String           @default("classic")
+  themeColor   String           @default("#1aa3e8")
+  font         String           @default("Inter")
+  name         String
+  nameZh       String?
+  nameEn       String?
+  jobTitle     String?
+  department   String?
+  company      String?
+  phone        String?
+  mobile       String?
+  whatsapp     String?
+  email        String?
+  website      String?
+  address      String?
+  notes        String?
+  socials      Json             @default("[]")
+  customFields Json             @default("[]")
+  logoUrl      String?
+  photoUrl     String?
+  bannerUrl    String?
+  qrSlug       String           @unique
+  tags         String[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  archivedAt   DateTime?
+  workspace    Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner        User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  signatures   Signature[]
+  backgrounds  VirtualBackground[]
+  shares       ShareEvent[]
+
+  @@index([workspaceId, status])
+}
+
+model Contact {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  ownerId      String
+  name         String
+  nameZh       String?
+  nameEn       String?
+  jobTitle     String?
+  department   String?
+  company      String?
+  phone        String?
+  mobile       String?
+  whatsapp     String?
+  email        String?
+  website      String?
+  address      String?
+  notes        String?
+  socials      Json      @default("[]")
+  tags         String[]
+  groupName    String?
+  favorite     Boolean   @default(false)
+  source       String    @default("manual")
+  imageUrl     String?
+  cardImageUrl String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner        User      @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, name])
+  @@index([workspaceId, email])
+}
+
+model Signature {
+  id          String    @id @default(cuid())
+  workspaceId String
+  cardId      String
+  name        String
+  template    String    @default("classic")
+  theme       String    @default("#1aa3e8")
+  showQr      Boolean   @default(true)
+  showPhoto   Boolean   @default(true)
+  showSocial  Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  card        Card      @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model VirtualBackground {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  cardId        String?
+  name          String
+  jobTitle      String?
+  backgroundUrl String?
+  accent        String    @default("#1aa3e8")
+  showQr        Boolean   @default(true)
+  showLogo      Boolean   @default(true)
+  showName      Boolean   @default(true)
+  platform      String    @default("zoom")
+  createdAt     DateTime  @default(now())
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  card          Card?     @relation(fields: [cardId], references: [id])
+}
+
+model ScanItem {
+  id          String     @id @default(cuid())
+  workspaceId String
+  userId      String
+  batchId     String
+  status      ScanStatus @default(REVIEW)
+  imageUrl    String?
+  fileName    String?
+  rawText     String     @default("")
+  language    String     @default("eng")
+  fields      Json
+  confidence  Float      @default(0)
+  sharpness   Float?
+  rotation    Int        @default(0)
+  duplicateOf String?
+  engine      String?
+  note        String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, batchId])
+}
+
+model ShareEvent {
+  id        String   @id @default(cuid())
+  cardId    String
+  channel   String
+  createdAt DateTime @default(now())
+  card      Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+}
+
+model AnalyticsEvent {
+  id          String        @id @default(cuid())
+  workspaceId String
+  cardId      String?
+  type        AnalyticsType
+  createdAt   DateTime      @default(now())
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+}
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  workspaceId String
+  actorId     String?
+  action      String
+  entity      String
+  entityId    String?
+  meta        Json?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  actor       User?     @relation(fields: [actorId], references: [id])
+
+  @@index([workspaceId, createdAt])
+}
+
+model StoredFile {
+  id          String    @id @default(cuid())
+  workspaceId String
+  key         String
+  mime        String
+  size        Int
+  driver      String    @default("local")
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model ApprovalRequest {
+  id               String         @id @default(cuid())
+  workspaceId      String
+  requesterId      String
+  type             String
+  status           ApprovalStatus @default(PENDING)
+  payload          Json
+  feishuInstanceId String?
+  createdAt        DateTime       @default(now())
+  decidedAt        DateTime?
+  workspace        Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  requester        User           @relation("ApprovalRequester", fields: [requesterId], references: [id])
+}
