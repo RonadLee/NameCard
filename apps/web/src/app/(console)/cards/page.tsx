@@ -18,6 +18,7 @@ export default function CardsPage() {
   const [archived, setArchived] = useState(false);
   const cards = useQuery({ queryKey: ["cards", archived], queryFn: () => api<Card[]>(`/cards${archived ? "?archived=1" : ""}`) });
   const [share, setShare] = useState<Card | null>(null);
+  const [removeId, setRemoveId] = useState<string | null>(null);
 
   const mutate = useMutation({
     mutationFn: async ({ id, action }: { id: string; action: "duplicate" | "archive" | "delete" }) => {
@@ -49,7 +50,7 @@ export default function CardsPage() {
             <div className="mt-3 flex gap-3 text-xs text-[#8b919a]">
               <button onClick={() => mutate.mutate({ id: card.id, action: "duplicate" })}>Duplicate</button>
               <button onClick={() => mutate.mutate({ id: card.id, action: "archive" })}>{card.status === "ARCHIVED" ? "Restore" : "Archive"}</button>
-              <button onClick={() => mutate.mutate({ id: card.id, action: "delete" })}>Delete</button>
+              <button onClick={() => setRemoveId(card.id)}>Delete</button>
             </div>
           </article>
         ))}
@@ -61,6 +62,13 @@ export default function CardsPage() {
         </Link>
       </div>
       <ShareDialog card={share} onClose={() => setShare(null)} />
+      <Dialog open={Boolean(removeId)} title="Delete card" onClose={() => setRemoveId(null)}>
+        <p className="text-sm text-[#66707c]">This deletes the card, its share links, and any signature built from it. A virtual background keeps the image and drops the card link.</p>
+        <div className="mt-4 flex gap-2">
+          <Button onClick={() => { if (removeId) mutate.mutate({ id: removeId, action: "delete" }); setRemoveId(null); }}>Delete</Button>
+          <Button variant="ghost" onClick={() => setRemoveId(null)}>Cancel</Button>
+        </div>
+      </Dialog>
     </div>
   );
 }
