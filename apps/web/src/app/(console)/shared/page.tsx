@@ -1,13 +1,25 @@
 "use client";
 
 import { CardFace } from "@/components/card-face";
-import { PageTitle } from "@/components/ui";
+import { Button, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
+import { useSession } from "@/lib/store";
 import type { Card } from "@/lib/types";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export default function SharedPage() {
+  const toast = useSession((state) => state.toast);
+  const queryClient = useQueryClient();
   const cards = useQuery({ queryKey: ["shared"], queryFn: () => api<Card[]>("/cards/shared") });
+  async function save(card: Card) {
+    try {
+      const result = await api<{ alreadySaved: boolean }>(`/contacts/from-card`, { method: "POST", body: JSON.stringify({ slug: card.qrSlug }) });
+      await queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      toast(result.alreadySaved ? `${card.name} is already in the cardholder` : `${card.name} saved to the cardholder`);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Could not save", "err");
+    }
+  }
   return (
     <div>
       <PageTitle title="Shared Cards" />
@@ -17,7 +29,7 @@ export default function SharedPage() {
             <CardFace card={card} />
             <div className="mt-3 flex items-center justify-between text-sm text-[#66707c]">
               <span>{card.owner?.name}</span>
-              <span className="rounded-full bg-[#eef8fd] px-2 py-1 text-xs text-[#1287c4]">{card.visibility}</span>
+              <span className="flex items-center gap-2"><span className="rounded-full bg-[#eef8fd] px-2 py-1 text-xs text-[#1287c4]">{card.visibility}</span><Button variant="soft" onClick={() => save(card)}>Save</Button></span>
             </div>
           </article>
         ))}

@@ -97,6 +97,7 @@ export class CardsService {
 
   async remove(user: AuthUser, id: string) {
     await this.owned(user, id, true);
+    await this.prisma.virtualBackground.updateMany({ where: { cardId: id }, data: { cardId: null } });
     await this.prisma.card.delete({ where: { id } });
     await this.audit.log(user, "card.delete", "card", id);
     return { ok: true };
@@ -158,6 +159,12 @@ export class CardsService {
 
   async requestPublish(user: AuthUser, id: string) {
     const card = await this.owned(user, id, true);
+    const pending = await this.prisma.approvalRequest.findMany({
+      where: { workspaceId: user.wid, type: "card.publish", status: "PENDING" },
+    });
+    if (pending.some((item) => (item.payload as { cardId?: string }).cardId === card.id)) {
+      throw new BadRequestException("This card is already waiting for approval");
+    }
     const approval = await this.prisma.approvalRequest.create({
       data: {
         workspaceId: user.wid,
@@ -180,7 +187,6 @@ export class CardsService {
     const card = await this.prisma.card.findFirst({ where: { qrSlug: slug, status: "ACTIVE", visibility: "PUBLIC" } });
     if (!card) throw new NotFoundException("This card is not public");
     await this.track(card.workspaceId, "VIEW", card.id);
-    await this.track(card.workspaceId, "SCAN", card.id);
     return card;
   }
 

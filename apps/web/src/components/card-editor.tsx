@@ -92,7 +92,7 @@ export function CardEditor({ id }: { id?: string }) {
 
   return (
     <div>
-      <PageTitle title={id ? "Edit card" : "Create card"} extra={<Button onClick={() => save.mutate()} disabled={save.isPending}>{save.isPending ? "Saving…" : "Save"}</Button>} />
+      <PageTitle title={id ? "Edit card" : "Create card"} extra={<span className="flex gap-2">{id ? <Button variant="ghost" onClick={async () => { try { await api(`/cards/${id}/publish-request`, { method: "POST" }); toast("Sent to an admin for approval"); } catch (error) { toast(error instanceof Error ? error.message : "Could not submit", "err"); } }}>Submit for approval</Button> : null}<Button onClick={() => save.mutate()} disabled={save.isPending}>{save.isPending ? "Saving…" : "Save"}</Button></span>} />
       <div className="grid items-start gap-6 lg:grid-cols-[360px_1fr]">
         <div className="rounded-2xl bg-white p-4 shadow-card">
           <CardFace card={card} />
