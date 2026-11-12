@@ -1,0 +1,9 @@
+{
+  "name": "NameCard",
+  "short_name": "NameCard",
+  "start_url": "/cards",
+  "display": "standalone",
+  "background_color": "#f4f6f9",
+  "theme_color": "#1aa3e8",
+  "icons": [{ "src": "/brand/northwind.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
