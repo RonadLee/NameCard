@@ -95,6 +95,7 @@ model Workspace {
   storageUsedBytes  Int                 @default(0)
   storageLimitBytes Int                 @default(524288000)
   feishuTenantKey   String?
+  contactGroups     String[]            @default([])
   createdAt         DateTime            @default(now())
   memberships       Membership[]
   departments       Department[]

@@ -1,0 +1,1 @@
+ALTER TABLE "Workspace" ADD COLUMN "contactGroups" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

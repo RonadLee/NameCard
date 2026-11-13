@@ -1,11 +1,11 @@
 "use client";
 
 import { api } from "@/lib/api";
-import { cn, bytesLabel } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { useSession } from "@/lib/store";
 import type { SessionUser, Workspace } from "@/lib/types";
 import { useQueryClient } from "@tanstack/react-query";
-import { BarChart3, Crown, IdCard, Image as ImageIcon, LogOut, Mail, Menu, Network, PanelLeft, ScanLine, Settings, Share2, Users, Wallet, X } from "lucide-react";
+import { Crown, IdCard, Image as ImageIcon, LogOut, Mail, Menu, PanelLeft, Wallet } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -18,20 +18,11 @@ const primary = [
   { href: "/cardholder", label: "Cardholder", icon: Wallet },
 ];
 
-const enterprise = [
-  { href: "/scan", label: "Scan Cards", icon: ScanLine },
-  { href: "/contacts", label: "Contacts", icon: Users },
-  { href: "/teams", label: "Teams", icon: Network },
-  { href: "/shared", label: "Shared Cards", icon: Share2 },
-  { href: "/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/settings", label: "Settings", icon: Settings },
-];
-
 const mobile = [
   { href: "/cards", label: "Cards", icon: IdCard },
-  { href: "/scan", label: "Scan", icon: ScanLine },
+  { href: "/signatures", label: "Signature", icon: Mail },
+  { href: "/backgrounds", label: "Background", icon: ImageIcon },
   { href: "/cardholder", label: "Holder", icon: Wallet },
-  { href: "/contacts", label: "Contacts", icon: Users },
 ];
 
 export function Shell({ children }: { children: React.ReactNode }) {
@@ -45,7 +36,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const toast = useSession((state) => state.toast);
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [more, setMore] = useState(false);
   const offline = typeof navigator !== "undefined" && !navigator.onLine;
 
   async function switchWorkspace(workspaceId: string) {
@@ -86,17 +76,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
             {children}
           </motion.div>
         </main>
-        <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-[#eceef2] bg-white md:hidden">
+        <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-[#eceef2] bg-white md:hidden">
           {mobile.map((item) => (
             <Link key={item.href} href={item.href} className={cn("flex flex-col items-center gap-1 py-2 text-[11px]", pathname.startsWith(item.href) ? "text-[#1aa3e8]" : "text-[#8b919a]")}>
               <item.icon size={18} />
               {item.label}
             </Link>
           ))}
-          <button className="flex flex-col items-center gap-1 py-2 text-[11px] text-[#8b919a]" onClick={() => setMore(true)}>
-            <Menu size={18} />
-            More
-          </button>
         </nav>
       </div>
       <AnimatePresence>
@@ -105,20 +91,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <motion.aside className="h-full w-[260px] bg-white" initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }} onClick={(event) => event.stopPropagation()}>
               <SidebarBody collapsed={false} pathname={pathname} onToggle={() => setOpen(false)} workspace={workspace} user={user} onSwitch={switchWorkspace} onSignOut={signOut} />
             </motion.aside>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-      <AnimatePresence>
-        {more ? (
-          <motion.div className="fixed inset-0 z-40 bg-[#1c1f23]/40 md:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setMore(false)}>
-            <motion.div className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white p-4" initial={{ y: 320 }} animate={{ y: 0 }} exit={{ y: 320 }} onClick={(event) => event.stopPropagation()}>
-              <div className="mb-3 flex items-center justify-between"><span className="font-semibold">More</span><button onClick={() => setMore(false)} aria-label="Close"><X size={18} /></button></div>
-              {enterprise.map((item) => (
-                <Link key={item.href} href={item.href} onClick={() => setMore(false)} className="flex items-center gap-3 rounded-xl px-2 py-3 text-sm hover:bg-[#f4f6f9]">
-                  <item.icon size={18} /> {item.label}
-                </Link>
-              ))}
-            </motion.div>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -150,7 +122,7 @@ function SidebarBody({ collapsed, pathname, onToggle, workspace, user, onSwitch,
         ) : null}
       </div>
       <nav className="mt-4 flex-1 space-y-1 overflow-y-auto px-2">
-        {[...primary, ...enterprise].map((item) => {
+        {primary.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
             <Link key={item.href} href={item.href} className={cn("relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-[#3d4550]", active && "bg-[#f3f5f7] font-medium text-[#1c1f23]", collapsed && "justify-center px-0")}>
@@ -171,7 +143,6 @@ function SidebarBody({ collapsed, pathname, onToggle, workspace, user, onSwitch,
             <Crown size={16} className="text-[#1aa3e8]" />
             {!collapsed ? <div className="mt-2 font-medium">Team plan</div> : null}
             {!collapsed ? <p className="mt-1 text-xs leading-5 text-[#8b919a]">Shared templates, departments, and company cardholder are on.</p> : null}
-            {!collapsed && workspace ? <p className="mt-2 text-xs text-[#8b919a]">{bytesLabel(workspace.storageUsedBytes)} of {bytesLabel(workspace.storageLimitBytes)} stored</p> : null}
           </div>
         ) : (
           <div className={cn("rounded-2xl border border-[#eceef2] p-3", collapsed && "px-2")}>
@@ -181,7 +152,6 @@ function SidebarBody({ collapsed, pathname, onToggle, workspace, user, onSwitch,
                 <div className="mt-3 text-sm font-semibold">Upgrade to Team</div>
                 <p className="mt-1 text-xs leading-5 text-[#8b919a]">Upgrading to Team Edition allows multiple people to use the same template.</p>
                 <Link href="/settings?tab=billing" className="mt-3 flex h-8 items-center justify-center rounded-full bg-[#f2f3f5] text-xs font-medium text-[#3d4550]">Upgrade</Link>
-                {workspace ? <p className="mt-2 text-center text-[11px] text-[#8b919a]">{bytesLabel(workspace.storageUsedBytes)} stored</p> : null}
               </>
             ) : null}
           </div>

@@ -56,6 +56,7 @@ export type Contact = {
   imageUrl?: string | null;
   cardImageUrl?: string | null;
   ownerId: string;
+  createdAt: string;
   updatedAt: string;
 };
 

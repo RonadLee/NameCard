@@ -18,7 +18,7 @@ export default function SignaturesPage() {
   if (!signatures.data.length) {
     return (
       <div>
-        <PageTitle title="Email Signature" extra={<Link href="/signatures/new" className="inline-flex h-9 items-center rounded-full bg-[#1aa3e8] px-4 text-sm font-medium text-white"><Plus size={16} /> Create signature</Link>} />
+        <PageTitle title="Email Signature" action={<Link href="/signatures/new" className="grid h-7 w-7 place-items-center rounded-full border border-[#e6e8ee] bg-white" aria-label="Create signature"><Plus size={16} /></Link>} extra={<Link href="/signatures/new" className="inline-flex h-9 items-center rounded-full bg-[#1aa3e8] px-4 text-sm font-medium text-white"><Plus size={16} /> Create signature</Link>} />
         <div className="grid min-h-[60vh] place-items-center text-center">
           <div>
             {sample ? <div className="mx-auto mb-8 max-w-md rounded-2xl bg-white p-4 text-left shadow-card" dangerouslySetInnerHTML={{ __html: signatureHtml({ template: "classic", theme: sample.themeColor, showQr: true, showPhoto: true, showSocial: true }, sample) }} /> : null}

@@ -138,6 +138,16 @@ async function main() {
   const harborCards = (await (await fetch(`${base}/cards`, { headers: { Authorization: `Bearer ${switchedBody.accessToken}` } })).json()) as { name: string }[];
   if (harborCards.some((item) => item.name === "Alex Chen")) throw new Error("workspace switch leaked cards");
 
+  const made = await fetch(`${base}/contacts/groups`, { method: "POST", headers, body: JSON.stringify({ name: "Smoke Group" }) });
+  if (!made.ok) throw new Error(`create group ${made.status} ${await made.text()}`);
+  const paged = await fetch(`${base}/contacts?page=1&pageSize=59&sort=created`, { headers });
+  const pageBody = (await paged.json()) as { items?: unknown[]; total?: number };
+  if (!paged.ok || !Array.isArray(pageBody.items) || typeof pageBody.total !== "number") throw new Error("paged cardholder");
+  const plain = await fetch(`${base}/contacts`, { headers });
+  if (!Array.isArray(await plain.json())) throw new Error("contact list should stay an array");
+  const removedGroup = await fetch(`${base}/contacts/groups?name=${encodeURIComponent("Smoke Group")}`, { method: "DELETE", headers });
+  if (!removedGroup.ok) throw new Error(`delete group ${removedGroup.status}`);
+
   console.log("smoke ok");
 }
 
