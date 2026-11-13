@@ -6,31 +6,16 @@ import { api } from "@/lib/api";
 import { useSession } from "@/lib/store";
 import type { Card } from "@/lib/types";
 import { toPng } from "html-to-image";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Copy, Pencil, Plus, Share2 } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
 import QRCode from "qrcode";
 
 export default function CardsPage() {
-  const toast = useSession((state) => state.toast);
-  const queryClient = useQueryClient();
   const [archived, setArchived] = useState(false);
   const cards = useQuery({ queryKey: ["cards", archived], queryFn: () => api<Card[]>(`/cards${archived ? "?archived=1" : ""}`) });
   const [share, setShare] = useState<Card | null>(null);
-  const [removeId, setRemoveId] = useState<string | null>(null);
-
-  const mutate = useMutation({
-    mutationFn: async ({ id, action }: { id: string; action: "duplicate" | "archive" | "delete" }) => {
-      if (action === "delete") return api(`/cards/${id}`, { method: "DELETE" });
-      return api(`/cards/${id}/${action}`, { method: "POST" });
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["cards"] });
-      toast("Card updated");
-    },
-    onError: (error) => toast(error instanceof Error ? error.message : "Could not update the card", "err"),
-  });
 
   return (
     <div>
@@ -47,11 +32,6 @@ export default function CardsPage() {
               <Link href={`/cards/${card.id}`} className="inline-flex h-9 items-center gap-1 rounded-full border border-[#e4e7ec] px-4 text-sm"><Pencil size={14} /> Edit</Link>
               <button className="inline-flex h-9 items-center gap-1 rounded-full bg-[#1aa3e8] px-4 text-sm font-medium text-white" onClick={() => setShare(card)}><Share2 size={14} /> share</button>
             </div>
-            <div className="mt-3 flex gap-3 text-xs text-[#8b919a]">
-              <button onClick={() => mutate.mutate({ id: card.id, action: "duplicate" })}>Duplicate</button>
-              <button onClick={() => mutate.mutate({ id: card.id, action: "archive" })}>{card.status === "ARCHIVED" ? "Restore" : "Archive"}</button>
-              <button onClick={() => setRemoveId(card.id)}>Delete</button>
-            </div>
           </article>
         ))}
         <Link href="/cards/new" className="grid min-h-[250px] place-items-center rounded-[20px] bg-white shadow-card">
@@ -62,13 +42,6 @@ export default function CardsPage() {
         </Link>
       </div>
       <ShareDialog card={share} onClose={() => setShare(null)} />
-      <Dialog open={Boolean(removeId)} title="Delete card" onClose={() => setRemoveId(null)}>
-        <p className="text-sm text-[#66707c]">This deletes the card, its share links, and any signature built from it. A virtual background keeps the image and drops the card link.</p>
-        <div className="mt-4 flex gap-2">
-          <Button onClick={() => { if (removeId) mutate.mutate({ id: removeId, action: "delete" }); setRemoveId(null); }}>Delete</Button>
-          <Button variant="ghost" onClick={() => setRemoveId(null)}>Cancel</Button>
-        </div>
-      </Dialog>
     </div>
   );
 }

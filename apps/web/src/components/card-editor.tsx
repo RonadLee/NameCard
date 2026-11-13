@@ -1,7 +1,7 @@
 "use client";
 
 import { CardFace } from "@/components/card-face";
-import { Button, controlClass, Field, PageTitle } from "@/components/ui";
+import { Button, controlClass, Dialog, Field, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/store";
 import type { Card, CustomField, SocialLink } from "@/lib/types";
@@ -38,6 +38,7 @@ export function CardEditor({ id }: { id?: string }) {
   const queryClient = useQueryClient();
   const existing = useQuery({ queryKey: ["card", id], queryFn: () => api<Card>(`/cards/${id}`), enabled: Boolean(id) });
   const [card, setCard] = useState<Partial<Card>>(empty);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   useEffect(() => {
     if (existing.data) setCard(existing.data);
   }, [existing.data]);
@@ -96,6 +97,13 @@ export function CardEditor({ id }: { id?: string }) {
       <div className="grid items-start gap-6 lg:grid-cols-[360px_1fr]">
         <div className="rounded-2xl bg-white p-4 shadow-card">
           <CardFace card={card} />
+          {id ? (
+            <div className="mt-3 flex gap-3 text-xs text-[#8b919a]">
+              <button onClick={async () => { const copy = await api<Card>(`/cards/${id}/duplicate`, { method: "POST" }); toast("Card duplicated"); router.push(`/cards/${copy.id}`); }}>Duplicate</button>
+              <button onClick={async () => { await api(`/cards/${id}/archive`, { method: "POST" }); toast("Card updated"); await queryClient.invalidateQueries({ queryKey: ["cards"] }); }}>Archive</button>
+              <button onClick={() => setConfirmDelete(true)}>Delete</button>
+            </div>
+          ) : null}
           <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
             {["classic", "split", "banner"].map((template) => (
               <button key={template} className={`rounded-xl border px-2 py-2 capitalize ${card.template === template ? "border-[#1aa3e8] text-[#1aa3e8]" : "border-[#e6e8ee]"}`} onClick={() => set("template", template)}>{template}</button>
@@ -145,6 +153,13 @@ export function CardEditor({ id }: { id?: string }) {
           <CustomEditor fields={card.customFields || []} onChange={(customFields) => set("customFields", customFields)} />
         </div>
       </div>
+      <Dialog open={confirmDelete} title="Delete card" onClose={() => setConfirmDelete(false)}>
+        <p className="text-sm text-[#66707c]">This deletes the card and the signature built from it.</p>
+        <div className="mt-4 flex gap-2">
+          <Button onClick={async () => { if (!id) return; await api(`/cards/${id}`, { method: "DELETE" }); router.push("/cards"); }}>Delete</Button>
+          <Button variant="ghost" onClick={() => setConfirmDelete(false)}>Cancel</Button>
+        </div>
+      </Dialog>
     </div>
   );
 }
