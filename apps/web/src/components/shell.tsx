@@ -144,18 +144,7 @@ function SidebarBody({ collapsed, pathname, onToggle, workspace, user, onSwitch,
             {!collapsed ? <div className="mt-2 font-medium">Team plan</div> : null}
             {!collapsed ? <p className="mt-1 text-xs leading-5 text-[#8b919a]">Shared templates, departments, and company cardholder are on.</p> : null}
           </div>
-        ) : (
-          <div className={cn("rounded-2xl border border-[#eceef2] p-3", collapsed && "px-2")}>
-            <div className="grid h-7 w-7 place-items-center rounded-full border border-[#eceef2] text-[#8b919a]"><Crown size={14} /></div>
-            {!collapsed ? (
-              <>
-                <div className="mt-3 text-sm font-semibold">Upgrade to Team</div>
-                <p className="mt-1 text-xs leading-5 text-[#8b919a]">Upgrading to Team Edition allows multiple people to use the same template.</p>
-                <Link href="/settings?tab=billing" className="mt-3 flex h-8 items-center justify-center rounded-full bg-[#f2f3f5] text-xs font-medium text-[#3d4550]">Upgrade</Link>
-              </>
-            ) : null}
-          </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

@@ -3,5 +3,5 @@
 import { CardForm } from "@/components/card-form";
 
 export default function NewCardPage() {
-  return <CardForm />;
+  return <div className="h-full overflow-y-auto p-4"><CardForm /></div>;
 }

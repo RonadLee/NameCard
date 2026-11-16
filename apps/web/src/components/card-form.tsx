@@ -5,7 +5,7 @@ import { useSession } from "@/lib/store";
 import type { CardDetails, Contact } from "@/lib/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, ChevronDown, ChevronUp } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 const maxBytes = 12 * 1024 * 1024;
@@ -243,6 +243,7 @@ function allowedFile(file: File) {
 
 export function CardForm({ contactId }: { contactId?: string }) {
   const router = useRouter();
+  const search = useSearchParams();
   const toast = useSession((state) => state.toast);
   const queryClient = useQueryClient();
   const existing = useQuery({ queryKey: ["contact", contactId], enabled: Boolean(contactId), queryFn: () => api<Contact>(`/contacts/${contactId}`) });
@@ -301,15 +302,17 @@ export function CardForm({ contactId }: { contactId?: string }) {
       if (!contactId && !draft.frontUrl) throw new Error("Add the front of the card");
       if (draft.frontUrl.startsWith("blob:")) throw new Error("Wait for the card image to finish uploading");
       return contactId
-        ? api(`/contacts/${contactId}`, { method: "PATCH", body: JSON.stringify(body) })
-        : api("/contacts", { method: "POST", body: JSON.stringify(body) });
+        ? api<{ id: string }>(`/contacts/${contactId}`, { method: "PATCH", body: JSON.stringify(body) })
+        : api<{ id: string }>("/contacts", { method: "POST", body: JSON.stringify(body) });
     },
-    onSuccess: async () => {
+    onSuccess: async (saved) => {
       await queryClient.invalidateQueries({ queryKey: ["cardholder"] });
       await queryClient.invalidateQueries({ queryKey: ["contact-groups"] });
       await queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      await queryClient.invalidateQueries({ queryKey: ["contact", saved.id] });
       toast(contactId ? "Card saved" : "Card added");
-      router.push("/cardholder");
+      const suffix = search.toString() ? `?${search.toString()}` : "";
+      router.push(`/cardholder/${saved.id}${suffix}`);
     },
     onError: (error) => toast(error instanceof Error ? error.message : "Could not save the card", "err"),
   });
@@ -326,7 +329,7 @@ export function CardForm({ contactId }: { contactId?: string }) {
       <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#eceff3] bg-white px-4 py-3">
         <h1 className="text-lg font-medium">{contactId ? "Edit" : "Add Card"}</h1>
         <div className="flex gap-2">
-          <button type="button" className="h-9 rounded border border-[#d9dee6] bg-white px-4 text-sm" onClick={() => router.push("/cardholder")}>Cancel</button>
+          <button type="button" className="h-9 rounded border border-[#d9dee6] bg-white px-4 text-sm" onClick={() => router.push(contactId ? `/cardholder/${contactId}${search.toString() ? `?${search.toString()}` : ""}` : `/cardholder${search.toString() ? `?${search.toString()}` : ""}`)}>Cancel</button>
           <button type="button" className="h-9 rounded bg-[#1aa3e8] px-4 text-sm font-medium text-white disabled:opacity-50" disabled={save.isPending || reading} onClick={() => save.mutate()}>
             {reading ? "Reading card…" : save.isPending ? "Saving…" : "Save"}
           </button>

@@ -5,5 +5,5 @@ import { useParams } from "next/navigation";
 
 export default function EditCardPage() {
   const params = useParams<{ id: string }>();
-  return <CardForm contactId={params.id} />;
+  return <div className="h-full overflow-y-auto p-4"><CardForm contactId={params.id} /></div>;
 }
