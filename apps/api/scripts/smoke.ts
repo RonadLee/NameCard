@@ -145,8 +145,31 @@ async function main() {
   if (!paged.ok || !Array.isArray(pageBody.items) || typeof pageBody.total !== "number") throw new Error("paged cardholder");
   const plain = await fetch(`${base}/contacts`, { headers });
   if (!Array.isArray(await plain.json())) throw new Error("contact list should stay an array");
-  const removedGroup = await fetch(`${base}/contacts/groups?name=${encodeURIComponent("Smoke Group")}`, { method: "DELETE", headers });
-  if (!removedGroup.ok) throw new Error(`delete group ${removedGroup.status}`);
+  const multi = await fetch(`${base}/contacts`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ name: "Smoke Multi", email: "multi@example.com", groups: ["Smoke Group", "Smoke Other"] }),
+  });
+  if (!multi.ok) throw new Error(`multi ${multi.status} ${await multi.text()}`);
+  const multiBody = (await multi.json()) as { id: string; groups: string[]; groupName: string | null };
+  if (!multiBody.groups.includes("Smoke Other") || multiBody.groupName !== "Smoke Group") throw new Error("groups were not saved");
+  const grouped = await fetch(`${base}/contacts?page=1&pageSize=59&group=${encodeURIComponent("Smoke Other")}`, { headers });
+  const groupedBody = (await grouped.json()) as { items: { id: string }[] };
+  if (!grouped.ok || !groupedBody.items.some((item) => item.id === multiBody.id)) throw new Error("second group filter missed the card");
+  const added = await fetch(`${base}/contacts/categorize`, { method: "POST", headers, body: JSON.stringify({ ids: [multiBody.id], groupName: "Smoke Third" }) });
+  if (!added.ok) throw new Error(`categorize ${added.status} ${await added.text()}`);
+  const loaded = await fetch(`${base}/contacts/${multiBody.id}`, { headers });
+  const loadedBody = (await loaded.json()) as { groups: string[] };
+  if (!loadedBody.groups.includes("Smoke Group") || !loadedBody.groups.includes("Smoke Third")) throw new Error("categorize replaced groups");
+  await fetch(`${base}/contacts/${multiBody.id}`, { method: "DELETE", headers });
+  for (const name of ["Smoke Group", "Smoke Other", "Smoke Third"]) {
+    const removedGroup = await fetch(`${base}/contacts/groups?name=${encodeURIComponent(name)}`, { method: "DELETE", headers });
+    if (!removedGroup.ok) throw new Error(`delete group ${name} ${removedGroup.status}`);
+  }
+  const bad = new FormData();
+  bad.append("file", new Blob(["hello"], { type: "text/plain" }), "notes.txt");
+  const rejected = await fetch(`${base}/scans/preview`, { method: "POST", headers: { Authorization: headers.Authorization }, body: bad });
+  if (rejected.status !== 400) throw new Error(`expected preview 400, got ${rejected.status}`);
 
   console.log("smoke ok");
 }

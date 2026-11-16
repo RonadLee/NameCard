@@ -218,10 +218,13 @@ model Contact {
   socials      Json      @default("[]")
   tags         String[]
   groupName    String?
+  groups       String[]  @default([])
   favorite     Boolean   @default(false)
   source       String    @default("manual")
   imageUrl     String?
   cardImageUrl String?
+  cardBackUrl  String?
+  details      Json      @default("{}")
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)

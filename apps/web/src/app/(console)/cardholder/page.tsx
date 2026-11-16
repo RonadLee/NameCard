@@ -1,11 +1,13 @@
 "use client";
 
-import { Button, controlClass, Dialog, Field } from "@/components/ui";
+import { Button, controlClass, Dialog } from "@/components/ui";
 import { api, download } from "@/lib/api";
 import { useSession } from "@/lib/store";
 import type { Contact } from "@/lib/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import JSZip from "jszip";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 const pageSize = 59;
@@ -13,9 +15,8 @@ const pageSize = 59;
 type Groups = { all: number; ungrouped: number; groups: { name: string; count: number }[] };
 type Page = { items: Contact[]; total: number; page: number; pageSize: number };
 
-const blank = { name: "", company: "", jobTitle: "", email: "", mobile: "", notes: "", groupName: "" };
-
 export default function CardholderPage() {
+  const router = useRouter();
   const toast = useSession((state) => state.toast);
   const queryClient = useQueryClient();
   const [scope, setScope] = useState<"mine" | "company">("mine");
@@ -25,14 +26,14 @@ export default function CardholderPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<string[]>([]);
-  const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState(blank);
   const [newGroup, setNewGroup] = useState("");
   const [naming, setNaming] = useState(false);
   const [managing, setManaging] = useState(false);
   const [categorizing, setCategorizing] = useState(false);
   const [note, setNote] = useState<Contact | null>(null);
   const [noteText, setNoteText] = useState("");
+  const [preview, setPreview] = useState<Contact | null>(null);
+  const [previewSide, setPreviewSide] = useState<"front" | "back">("front");
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSearch(q), 250);
@@ -69,12 +70,6 @@ export default function CardholderPage() {
     onSuccess: async () => { setNewGroup(""); setNaming(false); await refresh(); toast("Group created"); },
     onError: (error) => toast(error instanceof Error ? error.message : "Could not create the group", "err"),
   });
-  const addCard = useMutation({
-    mutationFn: () => api("/contacts", { method: "POST", body: JSON.stringify({ ...draft, groupName: draft.groupName || undefined }) }),
-    onSuccess: async () => { setAdding(false); setDraft(blank); await refresh(); toast("Card added"); },
-    onError: (error) => toast(error instanceof Error ? error.message : "Could not add the card", "err"),
-  });
-
   async function removeSelected() {
     if (!selected.length) return toast("Select at least one card", "err");
     if (!window.confirm(`Delete ${selected.length} card${selected.length === 1 ? "" : "s"}?`)) return;
@@ -116,12 +111,13 @@ export default function CardholderPage() {
     const zip = new JSZip();
     let count = 0;
     for (const row of rows.filter((item) => selected.length === 0 || selected.includes(item.id))) {
-      const url = row.cardImageUrl || row.imageUrl;
-      if (!url) continue;
-      const res = await fetch(url);
-      if (!res.ok) continue;
-      zip.file(`${row.name || "card"}-${row.id}.png`, await res.arrayBuffer());
-      count += 1;
+      const files = [row.cardImageUrl, row.cardBackUrl].filter((url): url is string => Boolean(url));
+      for (const [index, url] of files.entries()) {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        zip.file(`${row.name || "card"}-${row.id}${index === 0 ? "" : "-back"}.png`, await res.arrayBuffer());
+        count += 1;
+      }
     }
     if (!count) return toast("No card images to export", "err");
     const blob = await zip.generateAsync({ type: "blob" });
@@ -146,31 +142,40 @@ export default function CardholderPage() {
         </button>
       </div>
       <div className="flex min-h-[calc(100vh-8rem)]">
-        <aside className="hidden w-56 shrink-0 border-r border-[#e6e8ee] bg-white p-3 md:block">
-          <select className={`${controlClass} mb-4`} value={sort} aria-label="Sort" onChange={(event) => { setSort(event.target.value); setPage(1); }}>
-            <option value="created">Sort by Date</option>
-            <option value="name">Sort by Name</option>
-            <option value="company">Sort by Company</option>
-          </select>
-          <div className="mb-2 text-sm font-medium">Group</div>
-          {naming ? (
-            <div className="mb-2 flex gap-1">
-              <input className={controlClass} value={newGroup} onChange={(event) => setNewGroup(event.target.value)} placeholder="Group name" />
-              <Button onClick={() => createGroup.mutate()} disabled={!newGroup.trim()}>Add</Button>
-            </div>
-          ) : (
-            <button className="mb-1 block text-sm text-[#1aa3e8]" onClick={() => setNaming(true)}>+ New a Group</button>
-          )}
-          <button className="mb-3 block text-sm text-[#1aa3e8]" onClick={() => setManaging(true)}>Manage Groups</button>
-          <GroupOption label="All Cards" count={groups.data?.all ?? 0} active={group === ""} onClick={() => chooseGroup("")} />
-          <GroupOption label="Ungrouped" count={groups.data?.ungrouped ?? 0} active={group === "-"} onClick={() => chooseGroup("-")} />
-          {(groups.data?.groups ?? []).map((item) => (
-            <GroupOption key={item.name} label={item.name} count={item.count} active={group === item.name} onClick={() => chooseGroup(item.name)} />
-          ))}
+        <aside className="hidden w-56 shrink-0 flex-col border-r border-[#e6e8ee] bg-white md:flex md:max-h-[calc(100vh-8rem)]">
+          <div className="p-3 pb-1">
+            <select className={`${controlClass} mb-4`} value={sort} aria-label="Sort" onChange={(event) => { setSort(event.target.value); setPage(1); }}>
+              <option value="created">Sort by Date</option>
+              <option value="name">Sort by Name</option>
+              <option value="company">Sort by Company</option>
+            </select>
+            <div className="mb-2 text-sm font-medium">Group</div>
+            {naming ? (
+              <div className="mb-2 flex gap-1">
+                <input className={controlClass} value={newGroup} onChange={(event) => setNewGroup(event.target.value)} placeholder="Group name" />
+                <Button onClick={() => createGroup.mutate()} disabled={!newGroup.trim()}>Add</Button>
+              </div>
+            ) : (
+              <button className="mb-1 block text-sm text-[#1aa3e8]" onClick={() => setNaming(true)}>+ New a Group</button>
+            )}
+            <button className="mb-3 block text-sm text-[#1aa3e8]" onClick={() => setManaging(true)}>Manage Groups</button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+            <GroupOption label="All Cards" count={groups.data?.all ?? 0} active={group === ""} onClick={() => chooseGroup("")} />
+            <GroupOption label="Ungrouped" count={groups.data?.ungrouped ?? 0} active={group === "-"} onClick={() => chooseGroup("-")} />
+            {(groups.data?.groups ?? []).map((item) => (
+              <GroupOption key={item.name} label={item.name} count={item.count} active={group === item.name} onClick={() => chooseGroup(item.name)} />
+            ))}
+          </div>
         </aside>
         <section className="min-w-0 flex-1 bg-white">
           <div className="border-b border-[#eef0f3] px-4 py-3">
             <div className="text-lg font-medium">{title}</div>
+            <select className={`${controlClass} mt-2 md:hidden`} value={sort} aria-label="Sort" onChange={(event) => { setSort(event.target.value); setPage(1); }}>
+              <option value="created">Sort by Date</option>
+              <option value="name">Sort by Name</option>
+              <option value="company">Sort by Company</option>
+            </select>
             <select className={`${controlClass} mt-2 md:hidden`} value={group} aria-label="Group" onChange={(event) => chooseGroup(event.target.value)}>
               <option value="">All Cards ({groups.data?.all ?? 0})</option>
               <option value="-">Ungrouped ({groups.data?.ungrouped ?? 0})</option>
@@ -180,11 +185,12 @@ export default function CardholderPage() {
           <div className="flex flex-wrap items-center gap-2 border-b border-[#eef0f3] px-3 py-2">
             <Button variant="ghost" onClick={() => (selected.length ? setCategorizing(true) : toast("Select at least one card", "err"))}>Categorize</Button>
             <Button variant="ghost" onClick={() => removeSelected()}>Delete</Button>
-            <input className={`${controlClass} ml-auto max-w-xs`} placeholder="Search by name, company, job title, city and more" value={q} onChange={(event) => { setQ(event.target.value); setPage(1); }} />
+            <input className={`${controlClass} ml-auto w-56 max-w-full`} placeholder="Search by name, company, job title, city and more" value={q} onChange={(event) => { setQ(event.target.value); setPage(1); }} onKeyDown={(event) => { if (event.key === "Enter") setSearch(q); }} />
+            <Button variant="ghost" onClick={() => setSearch(q)}>Search</Button>
             <Button variant="ghost" onClick={() => void exportImages()}>Export business card image</Button>
             <Button variant="ghost" onClick={() => void exportExcel()}>Export Excel</Button>
             <Button variant="ghost" onClick={() => void merge()}>Merge duplicate cards</Button>
-            <button className="inline-flex h-9 items-center rounded bg-[#f39c12] px-3 text-sm font-medium text-white" onClick={() => setAdding(true)}>+ Add Card</button>
+            <button className="inline-flex h-9 items-center rounded bg-[#f39c12] px-3 text-sm font-medium text-white" onClick={() => router.push("/cardholder/new")}>+ Add Card</button>
           </div>
           <div className="overflow-auto">
             <table className="w-full min-w-[980px] text-left text-sm">
@@ -196,10 +202,10 @@ export default function CardholderPage() {
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.id} className="border-t border-[#f2f4f7]">
+                  <tr key={row.id} className="border-t border-[#f2f4f7] [content-visibility:auto] [contain-intrinsic-size:auto_52px]">
                     <td className="px-3 py-2"><input type="checkbox" aria-label={`Select ${row.name}`} checked={selected.includes(row.id)} onChange={(event) => setSelected(event.target.checked ? [...selected, row.id] : selected.filter((id) => id !== row.id))} /></td>
-                    <td className="px-3 py-2">{row.cardImageUrl || row.imageUrl ? <img src={row.cardImageUrl || row.imageUrl || ""} alt="" className="h-10 w-16 rounded object-cover" /> : <div className="h-10 w-16 rounded bg-[#eef1f4]" />}</td>
-                    <td className="px-3 py-2 font-medium">{row.name}</td>
+                    <td className="px-3 py-2">{row.cardImageUrl || row.imageUrl ? <button type="button" aria-label={`Preview ${row.name}`} onClick={() => { setPreview(row); setPreviewSide("front"); }}>{row.details?.frontKind === "pdf" ? <span className="grid h-10 w-16 place-items-center rounded bg-[#eef1f4] text-xs">PDF</span> : <img src={row.cardImageUrl || row.imageUrl || ""} alt="" loading="lazy" decoding="async" className="h-10 w-16 rounded object-cover" />}</button> : <div className="h-10 w-16 rounded bg-[#eef1f4]" />}</td>
+                    <td className="px-3 py-2 font-medium"><Link href={`/cardholder/${row.id}`} className="hover:text-[#1aa3e8]">{row.name}</Link></td>
                     <td className="px-3 py-2">{row.company}</td>
                     <td className="px-3 py-2">{row.jobTitle}</td>
                     <td className="px-3 py-2">{row.email}</td>
@@ -222,23 +228,8 @@ export default function CardholderPage() {
           </div>
         </section>
       </div>
-      <Dialog open={adding} title="Add Card" onClose={() => setAdding(false)}>
-        <div className="grid gap-3">
-          {([
-            ["name", "Name"],
-            ["company", "Company"],
-            ["jobTitle", "Title"],
-            ["email", "Email"],
-            ["mobile", "Telephone"],
-            ["groupName", "Group"],
-          ] as const).map(([key, label]) => (
-            <Field key={key} label={label}><input className={controlClass} value={draft[key]} onChange={(event) => setDraft({ ...draft, [key]: event.target.value })} /></Field>
-          ))}
-          <Field label="Note"><textarea className={`${controlClass} h-20 py-2`} value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></Field>
-          <Button onClick={() => (draft.name.trim() ? addCard.mutate() : toast("Name is required", "err"))} disabled={addCard.isPending}>Save</Button>
-        </div>
-      </Dialog>
       <Dialog open={categorizing} title="Categorize" onClose={() => setCategorizing(false)}>
+        <p className="mb-3 text-sm text-[#66707c]">Adds the selected cards to a group. A card can stay in its other groups.</p>
         <div className="space-y-2">
           {(groups.data?.groups ?? []).map((item) => (
             <button key={item.name} className="block w-full rounded-xl bg-[#f6f7f9] px-3 py-2 text-left text-sm" onClick={() => categorize(item.name)}>{item.name}</button>
@@ -259,13 +250,35 @@ export default function CardholderPage() {
           toast("Note saved");
         }}>Save note</Button>
       </Dialog>
+      {preview ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-[#1c1f23]/50 p-4" onClick={() => setPreview(null)}>
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-xl bg-white p-4" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex gap-2">
+                <button type="button" className={`rounded px-3 py-1 text-sm ${previewSide === "front" ? "bg-[#e8f6fd] text-[#1aa3e8]" : "text-[#66707c]"}`} onClick={() => setPreviewSide("front")}>Front</button>
+                {preview.cardBackUrl ? <button type="button" className={`rounded px-3 py-1 text-sm ${previewSide === "back" ? "bg-[#e8f6fd] text-[#1aa3e8]" : "text-[#66707c]"}`} onClick={() => setPreviewSide("back")}>Back</button> : null}
+              </div>
+              <button type="button" className="text-sm text-[#66707c]" onClick={() => setPreview(null)}>Close</button>
+            </div>
+            <CardPreview contact={preview} side={previewSide} />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
+function CardPreview({ contact, side }: { contact: Contact; side: "front" | "back" }) {
+  const url = side === "back" ? contact.cardBackUrl : contact.cardImageUrl || contact.imageUrl;
+  const pdf = side === "front" && contact.details?.frontKind === "pdf";
+  if (!url) return <div className="grid h-48 place-items-center text-sm text-[#8b919a]">No image</div>;
+  if (pdf || (side === "back" && contact.details?.backKind === "pdf")) return <iframe title={`${contact.name} card`} src={url} className="h-[70vh] w-full rounded border" />;
+  return <img src={url} alt={`${contact.name} card`} className="mx-auto max-h-[70vh] max-w-full object-contain" />;
+}
+
 function GroupOption({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
   return (
-    <button className={`flex w-full items-center gap-2 rounded px-1 py-1 text-left text-sm ${active ? "text-[#1aa3e8]" : "text-[#3d4550]"}`} onClick={onClick}>
+    <button className={`flex w-full items-center gap-2 rounded px-1 py-1 text-left text-sm ${active ? "bg-[#e8f6fd] font-medium text-[#1aa3e8]" : "text-[#3d4550]"}`} aria-current={active ? "true" : undefined} onClick={onClick}>
       <span className={`h-3.5 w-3.5 rounded-full border ${active ? "border-[#1aa3e8] bg-[#1aa3e8]" : "border-[#c5ccd4]"}`} />
       <span className="min-w-0 flex-1 truncate">{label} ({count})</span>
     </button>
@@ -288,9 +301,10 @@ function ManageGroups({ groups, onChanged }: { groups: { name: string; count: nu
             toast("Group renamed");
           }}>Rename</Button>
           <Button variant="ghost" onClick={async () => {
+            if (group.count > 0 && !window.confirm(`"${group.name}" has ${group.count} card${group.count === 1 ? "" : "s"}. Remove the group? Cards that also belong to other groups stay in those groups.`)) return;
             await api(`/contacts/groups?name=${encodeURIComponent(group.name)}`, { method: "DELETE" });
             await onChanged();
-            toast("Group removed. Its cards are now ungrouped.");
+            toast("Group removed");
           }}>Delete</Button>
         </div>
       ))}
