@@ -1,7 +1,9 @@
 "use client";
 
+import { MobileFrame } from "@/components/mobile-frame";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/store";
+import { useWide } from "@/lib/wide";
 import { cn } from "@/lib/utils";
 import { LogOut } from "lucide-react";
 import Link from "next/link";
@@ -22,6 +24,7 @@ export default function HolderLayout({ children }: { children: React.ReactNode }
   const logout = useSession((state) => state.logout);
   const router = useRouter();
   const pathname = usePathname();
+  const wide = useWide();
   useEffect(() => {
     if (ready && !token) router.replace("/login");
   }, [ready, token, router]);
@@ -33,6 +36,15 @@ export default function HolderLayout({ children }: { children: React.ReactNode }
   }
 
   if (!ready || !token) return <div className="grid h-screen place-items-center text-sm text-[#8b919a]">Loading workspace…</div>;
+  if (wide === false) {
+    return (
+      <MobileFrame>
+        <Suspense fallback={<div className="grid h-full place-items-center text-sm text-[#8b919a]">Loading cardholder…</div>}>
+          {children}
+        </Suspense>
+      </MobileFrame>
+    );
+  }
   return (
     <div className="flex h-screen flex-col bg-[#eef1f4]">
       <header className="flex h-12 shrink-0 items-center gap-4 bg-[#1787c4] px-4 text-sm text-white">

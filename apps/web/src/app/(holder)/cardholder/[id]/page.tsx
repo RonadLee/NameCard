@@ -1,8 +1,10 @@
 "use client";
 
+import { MobileDetail } from "@/components/mobile-detail";
 import { api } from "@/lib/api";
 import { holderHref, holderPageSize, readHolder, type HolderState } from "@/lib/holder";
 import { useSession } from "@/lib/store";
+import { useWide } from "@/lib/wide";
 import type { Contact } from "@/lib/types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Copy } from "lucide-react";
@@ -14,6 +16,13 @@ type Groups = { groups: { name: string; count: number }[] };
 type Page = { items: Contact[]; total: number; page: number; pageSize: number };
 
 export default function CardDetailPage() {
+  const wide = useWide();
+  if (wide === false) return <MobileDetail />;
+  return <DesktopDetail />;
+}
+
+function DesktopDetail() {
+  const wide = useWide();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -41,14 +50,15 @@ export default function CardDetailPage() {
     queryKey: ["cardholder", state.scope, state.group, state.sort, state.q, state.page],
     queryFn: () => api<Page>(`/contacts?${query.toString()}`),
     staleTime: 15_000,
+    enabled: wide === true,
   });
-  const groups = useQuery({ queryKey: ["contact-groups", state.scope], queryFn: () => api<Groups>(`/contacts/groups?scope=${state.scope}`), staleTime: 15_000 });
+  const groups = useQuery({ queryKey: ["contact-groups", state.scope], queryFn: () => api<Groups>(`/contacts/groups?scope=${state.scope}`), staleTime: 15_000, enabled: wide === true });
   const rows = cards.data?.items ?? [];
   const listed = rows.find((row) => row.id === params.id);
   const fetched = useQuery({
     queryKey: ["contact", params.id],
     queryFn: () => api<Contact>(`/contacts/${params.id}`),
-    enabled: !cards.isLoading && !listed,
+    enabled: wide === true && !cards.isLoading && !listed,
     staleTime: 15_000,
   });
   const contact = listed ?? fetched.data;

@@ -1,9 +1,11 @@
 "use client";
 
 import { CardFace, publicUrl } from "@/components/card-face";
+import { MobileHome } from "@/components/mobile-home";
 import { Button, Dialog, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/store";
+import { useWide } from "@/lib/wide";
 import type { Card } from "@/lib/types";
 import { toPng } from "html-to-image";
 import { useQuery } from "@tanstack/react-query";
@@ -13,8 +15,15 @@ import { useRef, useState } from "react";
 import QRCode from "qrcode";
 
 export default function CardsPage() {
+  const wide = useWide();
+  if (wide === false) return <MobileHome />;
+  return <DesktopCards />;
+}
+
+function DesktopCards() {
+  const wide = useWide();
   const [archived, setArchived] = useState(false);
-  const cards = useQuery({ queryKey: ["cards", archived], queryFn: () => api<Card[]>(`/cards${archived ? "?archived=1" : ""}`) });
+  const cards = useQuery({ queryKey: ["cards", archived], queryFn: () => api<Card[]>(`/cards${archived ? "?archived=1" : ""}`), enabled: wide === true });
   const [share, setShare] = useState<Card | null>(null);
 
   return (

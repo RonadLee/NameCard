@@ -8,6 +8,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Crown, IdCard, Image as ImageIcon, LogOut, Mail, Menu, PanelLeft, Wallet } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
+import { MobileFrame } from "@/components/mobile-frame";
+import { useWide } from "@/lib/wide";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
@@ -36,6 +38,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const toast = useSession((state) => state.toast);
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const wide = useWide();
   const offline = typeof navigator !== "undefined" && !navigator.onLine;
 
   async function switchWorkspace(workspaceId: string) {
@@ -55,6 +58,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     window.location.href = "/login";
   }
 
+  if (wide === false) return <MobileFrame>{children}</MobileFrame>;
   return (
     <div className="flex h-screen overflow-hidden bg-[#f4f6f9] text-[#1c1f23]">
       <motion.aside

@@ -1,9 +1,11 @@
 "use client";
 
+import { MobileHolder } from "@/components/mobile-holder";
 import { Button, controlClass, Dialog } from "@/components/ui";
 import { api, download } from "@/lib/api";
 import { holderHref, holderPageSize, readHolder, type HolderState } from "@/lib/holder";
 import { useSession } from "@/lib/store";
+import { useWide } from "@/lib/wide";
 import type { Contact } from "@/lib/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import JSZip from "jszip";
@@ -14,6 +16,13 @@ type Groups = { all: number; ungrouped: number; groups: { name: string; count: n
 type Page = { items: Contact[]; total: number; page: number; pageSize: number };
 
 export default function CardholderPage() {
+  const wide = useWide();
+  if (wide === false) return <MobileHolder />;
+  return <DesktopCardholder />;
+}
+
+function DesktopCardholder() {
+  const wide = useWide();
   const router = useRouter();
   const searchParams = useSearchParams();
   const state = readHolder(searchParams);
@@ -43,8 +52,9 @@ export default function CardholderPage() {
     queryKey: ["cardholder", state.scope, state.group, state.sort, state.q, state.page],
     queryFn: () => api<Page>(`/contacts?${params.toString()}`),
     staleTime: 15_000,
+    enabled: wide === true,
   });
-  const groups = useQuery({ queryKey: ["contact-groups", state.scope], queryFn: () => api<Groups>(`/contacts/groups?scope=${state.scope}`), staleTime: 15_000 });
+  const groups = useQuery({ queryKey: ["contact-groups", state.scope], queryFn: () => api<Groups>(`/contacts/groups?scope=${state.scope}`), staleTime: 15_000, enabled: wide === true });
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: ["cardholder"] });
     await queryClient.invalidateQueries({ queryKey: ["contact-groups"] });

@@ -310,6 +310,7 @@ export function CardForm({ contactId }: { contactId?: string }) {
       await queryClient.invalidateQueries({ queryKey: ["contact-groups"] });
       await queryClient.invalidateQueries({ queryKey: ["contacts"] });
       await queryClient.invalidateQueries({ queryKey: ["contact", saved.id] });
+      await queryClient.invalidateQueries({ queryKey: ["cardholder-mobile"] });
       toast(contactId ? "Card saved" : "Card added");
       const suffix = search.toString() ? `?${search.toString()}` : "";
       router.push(`/cardholder/${saved.id}${suffix}`);
