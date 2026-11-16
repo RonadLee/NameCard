@@ -7,17 +7,11 @@ import type { SessionUser, Workspace } from "@/lib/types";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-const demos = [
-  ["Alex Chen · Admin", "alex.chen@northwind.example"],
-  ["Mina Patel · Manager", "mina.patel@northwind.example"],
-  ["Sam Lee · Member", "sam.lee@northwind.example"],
-];
-
 export default function LoginPage() {
   const setSession = useSession((state) => state.setSession);
   const router = useRouter();
-  const [email, setEmail] = useState("alex.chen@northwind.example");
-  const [password, setPassword] = useState("Northwind#2026");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [mfaCode, setMfaCode] = useState("");
   const [mfaRequired, setMfaRequired] = useState(false);
   const [error, setError] = useState("");
@@ -69,13 +63,6 @@ export default function LoginPage() {
         </div>
         {error ? <p className="mt-3 text-sm text-[#d14343]">{error}</p> : null}
         <Button className="mt-6 w-full" disabled={pending}>{pending ? "Signing in…" : "Sign in"}</Button>
-        <div className="mt-6 space-y-2">
-          {demos.map(([label, value]) => (
-            <button type="button" key={value} className="block w-full rounded-xl bg-[#f6f7f9] px-3 py-2 text-left text-sm text-[#3d4550]" onClick={() => { setEmail(value); setPassword("Northwind#2026"); }}>
-              {label}
-            </button>
-          ))}
-        </div>
       </form>
     </div>
   );

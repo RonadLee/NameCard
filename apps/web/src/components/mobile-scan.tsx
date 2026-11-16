@@ -23,7 +23,7 @@ export function MobileScan() {
   const [active, setActive] = useState<ScanItem | null>(null);
   const [draft, setDraft] = useState<ScanItem["fields"] | null>(null);
   const [saving, setSaving] = useState(false);
-  const scans = useQuery({ queryKey: ["scans"], queryFn: () => api<ScanItem[]>("/scans"), staleTime: 15_000 });
+  const scans = useQuery({ queryKey: ["scans"], queryFn: () => api<ScanItem[]>("/scans"), refetchInterval: 4000 });
   const pending = (scans.data ?? []).filter((scan) => scan.status === "REVIEW").length;
   const language = accuracy === "high" ? "eng+chi_sim" : "eng";
 

@@ -51,14 +51,15 @@ function DesktopCardholder() {
   const cards = useQuery({
     queryKey: ["cardholder", state.scope, state.group, state.sort, state.q, state.page],
     queryFn: () => api<Page>(`/contacts?${params.toString()}`),
-    staleTime: 15_000,
+    refetchInterval: 4000,
     enabled: wide === true,
   });
-  const groups = useQuery({ queryKey: ["contact-groups", state.scope], queryFn: () => api<Groups>(`/contacts/groups?scope=${state.scope}`), staleTime: 15_000, enabled: wide === true });
+  const groups = useQuery({ queryKey: ["contact-groups", state.scope], queryFn: () => api<Groups>(`/contacts/groups?scope=${state.scope}`), refetchInterval: 4000, enabled: wide === true });
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: ["cardholder"] });
     await queryClient.invalidateQueries({ queryKey: ["contact-groups"] });
     await queryClient.invalidateQueries({ queryKey: ["contacts"] });
+    await queryClient.invalidateQueries({ queryKey: ["cardholder-mobile"] });
   };
   const rows = cards.data?.items ?? [];
   const total = cards.data?.total ?? 0;

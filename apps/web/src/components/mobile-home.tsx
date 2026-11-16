@@ -20,7 +20,7 @@ export function MobileHome() {
   const user = useSession((state) => state.user);
   const toast = useSession((state) => state.toast);
   const cards = useQuery({ queryKey: ["cards", false], queryFn: () => api<Card[]>("/cards") });
-  const counts = useQuery({ queryKey: ["contact-groups", "mine"], queryFn: () => api<{ all: number }>("/contacts/groups?scope=mine"), staleTime: 15_000 });
+  const counts = useQuery({ queryKey: ["contact-groups", "mine"], queryFn: () => api<{ all: number }>("/contacts/groups?scope=mine"), refetchInterval: 4000 });
   const [text, setText] = useState("");
   const [share, setShare] = useState<Card | null>(null);
   const [stats, setStats] = useState(false);

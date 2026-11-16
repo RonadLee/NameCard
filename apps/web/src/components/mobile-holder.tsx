@@ -59,10 +59,10 @@ export function MobileHolder() {
       return api<HolderPage>(`/contacts?${params}`);
     },
     getNextPageParam: (last) => (last.page * last.pageSize < last.total ? last.page + 1 : undefined),
-    staleTime: 15_000,
+    refetchInterval: 4000,
   });
-  const groups = useQuery({ queryKey: ["contact-groups", state.scope], queryFn: () => api<Groups>(`/contacts/groups?scope=${state.scope}`), staleTime: 15_000 });
-  const scans = useQuery({ queryKey: ["scans"], queryFn: () => api<ScanItem[]>("/scans"), staleTime: 15_000 });
+  const groups = useQuery({ queryKey: ["contact-groups", state.scope], queryFn: () => api<Groups>(`/contacts/groups?scope=${state.scope}`), refetchInterval: 4000 });
+  const scans = useQuery({ queryKey: ["scans"], queryFn: () => api<ScanItem[]>("/scans"), refetchInterval: 4000 });
   const items = useMemo(() => list.data?.pages.flatMap((page) => page.items) ?? [], [list.data]);
   const total = list.data?.pages[0]?.total ?? groups.data?.all ?? 0;
   const recognizing = (scans.data ?? []).filter((scan) => scan.status === "REVIEW").length;
@@ -123,7 +123,10 @@ export function MobileHolder() {
       context?.previous.forEach(([key, data]) => queryClient.setQueryData(key, data));
       toast(error instanceof Error ? error.message : "Could not update the card", "err");
     },
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: ["cardholder-mobile"] }),
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["cardholder-mobile"] });
+      await queryClient.invalidateQueries({ queryKey: ["cardholder"] });
+    },
   });
 
   const remove = useMutation({
@@ -141,6 +144,7 @@ export function MobileHolder() {
     },
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: ["cardholder-mobile"] });
+      await queryClient.invalidateQueries({ queryKey: ["cardholder"] });
       await queryClient.invalidateQueries({ queryKey: ["contact-groups"] });
     },
   });
@@ -161,7 +165,10 @@ export function MobileHolder() {
       context?.previous?.forEach(([key, data]) => queryClient.setQueryData(key, data));
       toast(error instanceof Error ? error.message : "Could not save the note", "err");
     },
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: ["cardholder-mobile"] }),
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["cardholder-mobile"] });
+      await queryClient.invalidateQueries({ queryKey: ["cardholder"] });
+    },
   });
 
   const label = state.group === "-" ? "Ungrouped" : state.group || "All Cards";

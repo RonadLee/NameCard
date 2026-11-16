@@ -28,7 +28,7 @@ export function MobileSettings() {
   const org = useQuery({
     queryKey: ["org"],
     queryFn: () => api<{ workspace: Workspace }>("/org"),
-    staleTime: 15_000,
+    refetchInterval: 4000,
   });
   const plan = org.data?.workspace.plan ?? workspace?.plan ?? "PERSONAL";
   const team = plan === "TEAM";

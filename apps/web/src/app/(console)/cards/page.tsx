@@ -55,7 +55,7 @@ function DesktopCards() {
   );
 }
 
-export function ShareDialog({ card, onClose }: { card: Card | null; onClose: () => void }) {
+function ShareDialog({ card, onClose }: { card: Card | null; onClose: () => void }) {
   const toast = useSession((state) => state.toast);
   const face = useRef<HTMLDivElement>(null);
   const [qr, setQr] = useState("");

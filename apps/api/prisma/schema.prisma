@@ -232,6 +232,8 @@ model Contact {
 
   @@index([workspaceId, name])
   @@index([workspaceId, email])
+  @@index([workspaceId, ownerId, createdAt])
+  @@index([workspaceId, createdAt])
 }
 
 model Signature {
@@ -290,6 +292,7 @@ model ScanItem {
   user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, batchId])
+  @@index([workspaceId, status, createdAt])
 }
 
 model ShareEvent {

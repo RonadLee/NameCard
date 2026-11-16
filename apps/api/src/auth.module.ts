@@ -122,7 +122,7 @@ export class AuthService {
     const membership = await this.prisma.membership.findFirst({ where: { userId: user.id }, include: { workspace: true }, orderBy: { workspace: { createdAt: "asc" } } });
     if (!membership) throw new UnauthorizedException("No workspace is assigned to this account");
     const pair = await this.tokenPair(user, membership.workspaceId, membership.role);
-    this.setCookie(res, pair.refresh);
+    this.setCookie(res, pair);
     await this.audit.log({ sub: user.id, wid: membership.workspaceId }, "auth.login", "user", user.id);
     const full = await this.profile(user.id);
     return { accessToken: pair.accessToken, user: this.publicUser(full!), workspace: membership.workspace };
@@ -135,17 +135,27 @@ export class AuthService {
     if (!row || row.expiresAt.getTime() < Date.now()) throw new UnauthorizedException();
     const membership = await this.prisma.membership.findFirst({ where: { userId: row.userId }, include: { workspace: true }, orderBy: { workspace: { createdAt: "asc" } } });
     if (!membership) throw new UnauthorizedException();
-    await this.prisma.refreshToken.delete({ where: { id: row.id } });
-    const pair = await this.tokenPair(row.user, membership.workspaceId, membership.role);
-    this.setCookie(res, pair.refresh);
+    const current = this.jwt.decode(String(req.cookies?.nc_session || "")) as { wid?: string } | null;
+    const chosen = current?.wid
+      ? await this.prisma.membership.findUnique({ where: { userId_workspaceId: { userId: row.userId, workspaceId: current.wid } }, include: { workspace: true, user: true } })
+      : null;
+    const active = chosen ?? membership;
+    try {
+      await this.prisma.refreshToken.delete({ where: { id: row.id } });
+    } catch {
+      throw new UnauthorizedException();
+    }
+    const pair = await this.tokenPair(row.user, active.workspaceId, active.role);
+    this.setCookie(res, pair);
     const full = await this.profile(row.userId);
-    return { accessToken: pair.accessToken, user: this.publicUser(full!), workspace: membership.workspace };
+    return { accessToken: pair.accessToken, user: this.publicUser(full!), workspace: active.workspace };
   }
 
   async logout(req: Request, res: Response) {
     const raw = req.cookies?.[COOKIE] as string | undefined;
     if (raw) await this.prisma.refreshToken.deleteMany({ where: { tokenHash: sha256(raw) } });
     res.clearCookie(COOKIE, { path: "/api/auth" });
+    res.clearCookie("nc_session", { path: "/api" });
     return { ok: true };
   }
 
@@ -156,7 +166,7 @@ export class AuthService {
     });
     if (!membership) throw new ForbiddenWorkspace();
     const pair = await this.tokenPair(membership.user, workspaceId, membership.role);
-    this.setCookie(res, pair.refresh);
+    this.setCookie(res, pair);
     const full = await this.profile(user.sub);
     return { accessToken: pair.accessToken, user: this.publicUser(full!), workspace: membership.workspace };
   }
@@ -206,8 +216,10 @@ export class AuthService {
     return { mfaEnabled: true };
   }
 
-  private setCookie(res: Response, refresh: string) {
-    res.cookie(COOKIE, refresh, { httpOnly: true, sameSite: "lax", path: "/api/auth", maxAge: WEEK });
+  private setCookie(res: Response, pair: { refresh: string; accessToken: string }) {
+    const secure = process.env.NODE_ENV === "production";
+    res.cookie(COOKIE, pair.refresh, { httpOnly: true, sameSite: "lax", secure, path: "/api/auth", maxAge: WEEK });
+    res.cookie("nc_session", pair.accessToken, { httpOnly: true, sameSite: "lax", secure, path: "/api", maxAge: 15 * 60 * 1000 });
   }
 
   private publicUser(user: NonNullable<Awaited<ReturnType<AuthService["profile"]>>>) {

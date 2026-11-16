@@ -1,5 +1,6 @@
 import "./env";
 import { Controller, Get, Module } from "@nestjs/common";
+import { PrismaService } from "./prisma.service";
 import { APP_GUARD } from "@nestjs/core";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { AnalyticsModule } from "./analytics.module";
@@ -14,8 +15,11 @@ import { StudioModule } from "./studio.module";
 
 @Controller()
 class HealthController {
+  constructor(private prisma: PrismaService) {}
+
   @Get("health")
-  health() {
+  async health() {
+    await this.prisma.$queryRaw`SELECT 1`;
     return { ok: true, service: "namecard-api" };
   }
 }

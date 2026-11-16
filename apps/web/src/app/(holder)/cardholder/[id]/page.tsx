@@ -49,17 +49,17 @@ function DesktopDetail() {
   const cards = useQuery({
     queryKey: ["cardholder", state.scope, state.group, state.sort, state.q, state.page],
     queryFn: () => api<Page>(`/contacts?${query.toString()}`),
-    staleTime: 15_000,
+    refetchInterval: 4000,
     enabled: wide === true,
   });
-  const groups = useQuery({ queryKey: ["contact-groups", state.scope], queryFn: () => api<Groups>(`/contacts/groups?scope=${state.scope}`), staleTime: 15_000, enabled: wide === true });
+  const groups = useQuery({ queryKey: ["contact-groups", state.scope], queryFn: () => api<Groups>(`/contacts/groups?scope=${state.scope}`), refetchInterval: 4000, enabled: wide === true });
   const rows = cards.data?.items ?? [];
   const listed = rows.find((row) => row.id === params.id);
   const fetched = useQuery({
     queryKey: ["contact", params.id],
     queryFn: () => api<Contact>(`/contacts/${params.id}`),
     enabled: wide === true && !cards.isLoading && !listed,
-    staleTime: 15_000,
+    refetchInterval: 4000,
   });
   const contact = listed ?? fetched.data;
   const title = state.group === "-" ? "Ungrouped" : state.group || "All Cards";

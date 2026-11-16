@@ -155,7 +155,7 @@ export class ScansService {
     const row = await this.must(user, id);
     if (!row.imageUrl) throw new BadRequestException("This scan has no image");
     const fileId = row.imageUrl.split("/").pop() as string;
-    const opened = await this.files.open(fileId);
+    const opened = await this.files.open(user.wid, fileId);
     if (!opened) throw new NotFoundException("Image file is missing");
     const bytes = opened.bytes ?? (await streamToBuffer(opened.stream));
     const turned = await sharp(bytes).rotate(90).png().toBuffer();

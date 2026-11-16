@@ -1,14 +1,21 @@
 import "dotenv/config";
 import { parseCardText } from "../src/parse-card";
 
-const parsed = parseCardText("Alex Chen\n陈艾力\nNorthwind Energy Ltd\nMarketing Manager\nalex.chen@northwind.example\n+1 415 555 0148\nhttps://northwind.example\n500 Market Street");
-if (parsed.email !== "alex.chen@northwind.example") throw new Error(`email parsed as ${parsed.email}`);
-if (!parsed.nameEn.includes("Alex")) throw new Error("english name missing");
-if (parsed.nameZh !== "陈艾力") throw new Error("chinese name missing");
-if (!parsed.company.includes("Northwind")) throw new Error("company missing");
+const parsed = parseCardText("Ada Example\n示例\nExample Studio Ltd\nAccount Lead\nada@example.com\n+1 415 555 0100\nhttps://example.com\n1 Example Street");
+if (parsed.email !== "ada@example.com") throw new Error(`email parsed as ${parsed.email}`);
+if (!parsed.nameEn.includes("Ada")) throw new Error("english name missing");
+if (parsed.nameZh !== "示例") throw new Error("chinese name missing");
+if (!parsed.company.includes("Example")) throw new Error("company missing");
 if (!parsed.mobile.includes("415")) throw new Error("mobile missing");
 
 const base = process.env.API_ORIGIN ?? "http://127.0.0.1:4000";
+const smokeEmail = process.env.SMOKE_EMAIL;
+const smokePassword = process.env.SMOKE_PASSWORD;
+const smokeMemberEmail = process.env.SMOKE_MEMBER_EMAIL;
+const smokeMemberPassword = process.env.SMOKE_MEMBER_PASSWORD;
+if (!smokeEmail || !smokePassword || !smokeMemberEmail || !smokeMemberPassword) {
+  throw new Error("Set SMOKE_EMAIL, SMOKE_PASSWORD, SMOKE_MEMBER_EMAIL, and SMOKE_MEMBER_PASSWORD");
+}
 
 async function main() {
   const health = await fetch(`${base}/health`);
@@ -17,22 +24,19 @@ async function main() {
   const loginRes = await fetch(`${base}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "alex.chen@northwind.example", password: "Northwind#2026" }),
+    body: JSON.stringify({ email: smokeEmail, password: smokePassword }),
   });
   if (!loginRes.ok) throw new Error(`login ${loginRes.status} ${await loginRes.text()}`);
   const login = (await loginRes.json()) as { accessToken: string };
   const headers = { Authorization: `Bearer ${login.accessToken}`, "Content-Type": "application/json" };
 
-  const cards = (await (await fetch(`${base}/cards`, { headers })).json()) as { id: string; name: string }[];
-  if (!cards.some((card) => card.name === "Alex Chen")) throw new Error("seed card missing");
-
   const created = await fetch(`${base}/cards`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ name: "Smoke Card", company: "Northwind Energy", email: "smoke@northwind.example", template: "classic" }),
+    body: JSON.stringify({ name: "Smoke Card", company: "Example Studio Ltd", email: "smoke@example.com", template: "classic", visibility: "PUBLIC" }),
   });
   if (!created.ok) throw new Error(`create card ${created.status} ${await created.text()}`);
-  const card = (await created.json()) as { id: string };
+  const card = (await created.json()) as { id: string; qrSlug: string; name: string };
 
   const contact = await fetch(`${base}/contacts`, {
     method: "POST",
@@ -49,46 +53,46 @@ async function main() {
   const sam = await fetch(`${base}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "sam.lee@northwind.example", password: "Northwind#2026" }),
+    body: JSON.stringify({ email: smokeMemberEmail, password: smokeMemberPassword }),
   });
   const samBody = (await sam.json()) as { accessToken: string };
   const denied = await fetch(`${base}/members`, {
     method: "POST",
     headers: { Authorization: `Bearer ${samBody.accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "Nope", email: "nope@northwind.example", role: "USER" }),
+    body: JSON.stringify({ name: "Nope", email: "nope@example.com", role: "USER" }),
   });
   if (denied.status !== 403 && denied.status !== 400) throw new Error(`expected member invite to be rejected, got ${denied.status}`);
 
-  await fetch(`${base}/cards/${card.id}`, { method: "DELETE", headers });
-  const pub = await fetch(`${base}/public/cards/alexchen`);
+  const pub = await fetch(`${base}/public/cards/${card.qrSlug}`);
   if (!pub.ok) throw new Error(`public card ${pub.status}`);
 
   const profile = await fetch(`${base}/auth/profile`, {
     method: "PATCH",
     headers,
-    body: JSON.stringify({ title: "Marketing Manager", phone: "+1 415 555 0108" }),
+    body: JSON.stringify({ title: "Administrator", phone: "" }),
   });
   if (!profile.ok) throw new Error(`profile ${profile.status} ${await profile.text()}`);
 
   const badPassword = await fetch(`${base}/auth/password`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ currentPassword: "wrong-password", nextPassword: "Northwind#2027" }),
+    body: JSON.stringify({ currentPassword: "wrong-password", nextPassword: "replacement-pass" }),
   });
   if (badPassword.status !== 401) throw new Error(`expected bad password 401, got ${badPassword.status}`);
 
   const savedCard = await fetch(`${base}/contacts/from-card`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ slug: "alexchen" }),
+    body: JSON.stringify({ slug: card.qrSlug }),
   });
   if (!savedCard.ok) throw new Error(`from-card ${savedCard.status} ${await savedCard.text()}`);
   const savedBody = (await savedCard.json()) as { id: string; name: string; alreadySaved: boolean };
-  if (savedBody.name !== "Alex Chen") throw new Error("saved card name");
-  const again = await fetch(`${base}/contacts/from-card`, { method: "POST", headers, body: JSON.stringify({ slug: "alexchen" }) });
+  if (savedBody.name !== "Smoke Card") throw new Error("saved card name");
+  const again = await fetch(`${base}/contacts/from-card`, { method: "POST", headers, body: JSON.stringify({ slug: card.qrSlug }) });
   const againBody = (await again.json()) as { alreadySaved: boolean };
   if (!again.ok || !againBody.alreadySaved) throw new Error("expected duplicate card save to be recognized");
   if (!savedBody.alreadySaved) await fetch(`${base}/contacts/${savedBody.id}`, { method: "DELETE", headers });
+  await fetch(`${base}/cards/${card.id}`, { method: "DELETE", headers });
 
   const contactBody = (await contact.json()) as { id: string };
   const edited = await fetch(`${base}/contacts/${contactBody.id}`, {
@@ -117,7 +121,7 @@ async function main() {
   const invited = await fetch(`${base}/members`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ name: "Smoke Guest", email: `smoke-${Date.now()}@northwind.example`, role: "USER" }),
+    body: JSON.stringify({ name: "Smoke Guest", email: `smoke-${Date.now()}@example.com`, role: "USER" }),
   });
   if (!invited.ok) throw new Error(`invite ${invited.status} ${await invited.text()}`);
   const guest = (await invited.json()) as { userId: string };
@@ -130,13 +134,14 @@ async function main() {
   const self = await fetch(`${base}/members/${me.user.id}`, { method: "DELETE", headers });
   if (self.status !== 400) throw new Error(`expected self-remove 400, got ${self.status}`);
   const other = me.user.memberships.find((item) => item.workspace.id !== me.workspace.id);
-  if (!other) throw new Error("expected a second workspace on the admin account");
-  const switched = await fetch(`${base}/auth/switch`, { method: "POST", headers, body: JSON.stringify({ workspaceId: other.workspace.id }) });
-  if (!switched.ok) throw new Error(`switch ${switched.status} ${await switched.text()}`);
-  const switchedBody = (await switched.json()) as { accessToken: string; workspace: { name: string } };
-  if (switchedBody.workspace.name !== "Harbor Advisory") throw new Error(`switched to ${switchedBody.workspace.name}`);
-  const harborCards = (await (await fetch(`${base}/cards`, { headers: { Authorization: `Bearer ${switchedBody.accessToken}` } })).json()) as { name: string }[];
-  if (harborCards.some((item) => item.name === "Alex Chen")) throw new Error("workspace switch leaked cards");
+  if (other) {
+    const switched = await fetch(`${base}/auth/switch`, { method: "POST", headers, body: JSON.stringify({ workspaceId: other.workspace.id }) });
+    if (!switched.ok) throw new Error(`switch ${switched.status} ${await switched.text()}`);
+    const switchedBody = (await switched.json()) as { accessToken: string; workspace: { name: string } };
+    if (switchedBody.workspace.name !== other.workspace.name) throw new Error(`switched to ${switchedBody.workspace.name}`);
+    const otherCards = (await (await fetch(`${base}/cards`, { headers: { Authorization: `Bearer ${switchedBody.accessToken}` } })).json()) as { name: string }[];
+    if (otherCards.some((item) => item.name === "Smoke Card")) throw new Error("workspace switch leaked cards");
+  }
 
   const made = await fetch(`${base}/contacts/groups`, { method: "POST", headers, body: JSON.stringify({ name: "Smoke Group" }) });
   if (!made.ok) throw new Error(`create group ${made.status} ${await made.text()}`);

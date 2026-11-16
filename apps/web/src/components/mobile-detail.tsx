@@ -19,8 +19,8 @@ export function MobileDetail() {
   const state = readHolder(searchParams);
   const toast = useSession((store) => store.toast);
   const queryClient = useQueryClient();
-  const contactQuery = useQuery({ queryKey: ["contact", params.id], queryFn: () => api<Contact>(`/contacts/${params.id}`), staleTime: 15_000 });
-  const groups = useQuery({ queryKey: ["contact-groups", state.scope], queryFn: () => api<{ groups: { name: string; count: number }[] }>(`/contacts/groups?scope=${state.scope}`), staleTime: 15_000 });
+  const contactQuery = useQuery({ queryKey: ["contact", params.id], queryFn: () => api<Contact>(`/contacts/${params.id}`), refetchInterval: 4000 });
+  const groups = useQuery({ queryKey: ["contact-groups", state.scope], queryFn: () => api<{ groups: { name: string; count: number }[] }>(`/contacts/groups?scope=${state.scope}`), refetchInterval: 4000 });
   const [slide, setSlide] = useState(0);
   const [menu, setMenu] = useState(false);
   const [grouping, setGrouping] = useState(false);
@@ -46,7 +46,11 @@ export function MobileDetail() {
       toast(error instanceof Error ? error.message : "Could not update the card", "err");
       void row;
     },
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: ["contact", params.id] }),
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["contact", params.id] });
+      await queryClient.invalidateQueries({ queryKey: ["cardholder"] });
+      await queryClient.invalidateQueries({ queryKey: ["cardholder-mobile"] });
+    },
   });
 
   const remove = useMutation({
