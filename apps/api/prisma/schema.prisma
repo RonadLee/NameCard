@@ -95,6 +95,7 @@ model Workspace {
   storageUsedBytes  Int                 @default(0)
   storageLimitBytes Int                 @default(524288000)
   feishuTenantKey   String?
+  contactGroups     String[]            @default([])
   createdAt         DateTime            @default(now())
   memberships       Membership[]
   departments       Department[]
@@ -217,10 +218,13 @@ model Contact {
   socials      Json      @default("[]")
   tags         String[]
   groupName    String?
+  groups       String[]  @default([])
   favorite     Boolean   @default(false)
   source       String    @default("manual")
   imageUrl     String?
   cardImageUrl String?
+  cardBackUrl  String?
+  details      Json      @default("{}")
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -228,6 +232,8 @@ model Contact {
 
   @@index([workspaceId, name])
   @@index([workspaceId, email])
+  @@index([workspaceId, ownerId, createdAt])
+  @@index([workspaceId, createdAt])
 }
 
 model Signature {
@@ -286,6 +292,7 @@ model ScanItem {
   user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, batchId])
+  @@index([workspaceId, status, createdAt])
 }
 
 model ShareEvent {

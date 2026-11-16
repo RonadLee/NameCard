@@ -9,6 +9,7 @@ import { AuthGuard, AuthUser, CurrentUser } from "./common";
 import { PrismaService } from "./prisma.service";
 
 const root = join(process.cwd(), "uploads");
+const allowedMime = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"]);
 
 export interface ObjectStorage {
   save(id: string, bytes: Buffer): Promise<void>;
@@ -66,8 +67,9 @@ export class FilesService {
     return { id: row.id, url: `/api/files/${row.id}`, mime, size: bytes.length };
   }
 
-  async open(id: string) {
-    const row = await this.prisma.storedFile.findUnique({ where: { id } });
+  async open(workspaceId: string, id: string) {
+    if (!/^[a-z0-9]+$/i.test(id)) return null;
+    const row = await this.prisma.storedFile.findFirst({ where: { id, workspaceId } });
     if (!row) return null;
     if (row.driver === "local" && !existsSync(join(root, id))) return null;
     return { mime: row.mime, stream: row.driver === "local" ? createReadStream(join(root, id)) : undefined, bytes: row.driver === "local" ? undefined : await this.driver.read(id) };
@@ -83,12 +85,15 @@ export class FilesController {
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 12 * 1024 * 1024 } }))
   upload(@CurrentUser() user: AuthUser, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException("Choose a file to upload");
-    return this.files.save(user.wid, file.buffer, file.mimetype || "application/octet-stream");
+    const mime = file.mimetype || "";
+    if (!allowedMime.has(mime)) throw new BadRequestException("Upload a JPG, PNG, WEBP, GIF, or PDF file");
+    return this.files.save(user.wid, file.buffer, mime);
   }
 
   @Get(":id")
-  async read(@Param("id") id: string, @Res() res: Response) {
-    const file = await this.files.open(id);
+  @UseGuards(AuthGuard)
+  async read(@CurrentUser() user: AuthUser, @Param("id") id: string, @Res() res: Response) {
+    const file = await this.files.open(user.wid, id);
     if (!file) {
       res.status(404).end();
       return;

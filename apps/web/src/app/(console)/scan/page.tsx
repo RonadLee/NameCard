@@ -1,12 +1,14 @@
 "use client";
 
+import { MobileScan } from "@/components/mobile-scan";
 import { Button, controlClass, Field, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/store";
+import { useWide } from "@/lib/wide";
 import type { ScanItem } from "@/lib/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Upload } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 
 const languages = [
   ["eng", "English"],
@@ -20,9 +22,16 @@ const languages = [
 const fieldKeys = ["name", "nameZh", "nameEn", "company", "jobTitle", "email", "mobile", "phone", "website", "address"] as const;
 
 export default function ScanPage() {
+  const wide = useWide();
+  if (wide === false) return <Suspense fallback={null}><MobileScan /></Suspense>;
+  return <DesktopScan />;
+}
+
+function DesktopScan() {
+  const wide = useWide();
   const toast = useSession((state) => state.toast);
   const queryClient = useQueryClient();
-  const scans = useQuery({ queryKey: ["scans"], queryFn: () => api<ScanItem[]>("/scans") });
+  const scans = useQuery({ queryKey: ["scans"], queryFn: () => api<ScanItem[]>("/scans"), enabled: wide === true });
   const [language, setLanguage] = useState("eng");
   const [active, setActive] = useState<ScanItem | null>(null);
   const video = useRef<HTMLVideoElement>(null);
@@ -171,6 +180,7 @@ function Review({ scan, onChange }: { scan: ScanItem; onChange: (scan: ScanItem)
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["scans"] });
       await queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      await queryClient.invalidateQueries({ queryKey: ["cardholder-mobile"] });
       toast("Saved to the cardholder");
     },
     onError: (error) => toast(error instanceof Error ? error.message : "Could not save", "err"),

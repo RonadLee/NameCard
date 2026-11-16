@@ -38,7 +38,7 @@ export class AuthGuard implements CanActivate {
   canActivate(ctx: ExecutionContext) {
     const req = ctx.switchToHttp().getRequest();
     const header = String(req.headers.authorization ?? "");
-    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : String(req.cookies?.nc_session || "");
     if (!token) throw new UnauthorizedException();
     try {
       req.user = this.jwt.verify(token);

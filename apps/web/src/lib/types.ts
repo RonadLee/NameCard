@@ -33,6 +33,32 @@ export type Card = {
   owner?: { id: string; name: string; email: string };
 };
 
+export type CardDetails = {
+  firstName?: string;
+  lastName?: string;
+  namePrefix?: string;
+  phoneticFirst?: string;
+  middleName?: string;
+  phoneticLast?: string;
+  nameSuffix?: string;
+  nickname?: string;
+  phoneticCompany?: string;
+  mobiles?: string[];
+  telephones?: string[];
+  faxes?: string[];
+  emails?: string[];
+  companies?: string[];
+  websites?: string[];
+  addresses?: { street: string; city: string; state: string; zip: string; country: string }[];
+  ims?: { network: string; value: string }[];
+  socialRows?: { network: string; value: string }[];
+  keyDates?: { kind: string; value: string }[];
+  dateReceived?: string;
+  confidence?: Record<string, number>;
+  frontKind?: string;
+  backKind?: string;
+};
+
 export type Contact = {
   id: string;
   name: string;
@@ -51,11 +77,15 @@ export type Contact = {
   socials: SocialLink[];
   tags: string[];
   groupName?: string | null;
+  groups?: string[];
   favorite: boolean;
   source: string;
   imageUrl?: string | null;
   cardImageUrl?: string | null;
+  cardBackUrl?: string | null;
+  details?: CardDetails | null;
   ownerId: string;
+  createdAt: string;
   updatedAt: string;
 };
 

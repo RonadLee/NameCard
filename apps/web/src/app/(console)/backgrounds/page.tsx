@@ -2,18 +2,28 @@
 
 import { PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
+import { useSession } from "@/lib/store";
 import { formatWhen } from "@/lib/utils";
 import type { VirtualBackground } from "@/lib/types";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import Link from "next/link";
 
 export default function BackgroundsPage() {
+  const toast = useSession((state) => state.toast);
+  const queryClient = useQueryClient();
   const rows = useQuery({ queryKey: ["backgrounds"], queryFn: () => api<VirtualBackground[]>("/backgrounds") });
+  async function remove(row: VirtualBackground) {
+    if (!window.confirm(`Delete ${row.name}?`)) return;
+    await api(`/backgrounds/${row.id}`, { method: "DELETE" });
+    await queryClient.invalidateQueries({ queryKey: ["backgrounds"] });
+    toast("Background deleted");
+  }
   return (
     <div>
       <PageTitle
         title="Virtual Background"
+        action={<Link href="/backgrounds/new" className="grid h-7 w-7 place-items-center rounded-full border border-[#e6e8ee] bg-white" aria-label="Create background"><Plus size={16} /></Link>}
         extra={
           <div className="flex items-center gap-4">
             <a className="text-sm text-[#1aa3e8]" href="https://www.camcard.com/virtual-background" target="_blank" rel="noreferrer">How do I use my virtual background?</a>
@@ -39,7 +49,7 @@ export default function BackgroundsPage() {
                 <td className="px-5 py-3">{row.name}</td>
                 <td className="px-5 py-3">{row.jobTitle}</td>
                 <td className="px-5 py-3">{formatWhen(row.createdAt)}</td>
-                <td className="px-5 py-3"><Link className="text-[#1aa3e8]" href={`/backgrounds/${row.id}`}>Edit</Link></td>
+                <td className="px-5 py-3"><Link className="text-[#1aa3e8]" href={`/backgrounds/${row.id}`}>Edit</Link>{row.backgroundUrl ? <a className="ml-3 text-[#1aa3e8]" href={row.backgroundUrl} download>Download</a> : null}<button className="ml-3 text-[#8b919a]" onClick={() => remove(row)}>Delete</button></td>
               </tr>
             ))}
           </tbody>

@@ -12,12 +12,20 @@ export class ApiError extends Error {
   }
 }
 
+let refreshing: Promise<boolean> | null = null;
+
 async function refresh(): Promise<boolean> {
-  const res = await fetch("/api/auth/refresh", { method: "POST", credentials: "include" });
-  if (!res.ok) return false;
-  const body = await res.json();
-  useSession.getState().setSession(body);
-  return true;
+  if (refreshing) return refreshing;
+  refreshing = fetch("/api/auth/refresh", { method: "POST", credentials: "include" })
+    .then(async (res) => {
+      if (!res.ok) return false;
+      useSession.getState().setSession(await res.json());
+      return true;
+    })
+    .finally(() => {
+      refreshing = null;
+    });
+  return refreshing;
 }
 
 export async function api<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {

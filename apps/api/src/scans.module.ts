@@ -1,6 +1,6 @@
-import { BadRequestException, Body, Controller, Get, Injectable, Module, NotFoundException, Param, Patch, Post, UploadedFiles, UseGuards, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Injectable, Module, NotFoundException, Param, Patch, Post, UploadedFile, UploadedFiles, UseGuards, UseInterceptors } from "@nestjs/common";
 import { Allow } from "class-validator";
-import { FilesInterceptor } from "@nestjs/platform-express";
+import { FileInterceptor, FilesInterceptor } from "@nestjs/platform-express";
 import { createHash } from "crypto";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -155,7 +155,7 @@ export class ScansService {
     const row = await this.must(user, id);
     if (!row.imageUrl) throw new BadRequestException("This scan has no image");
     const fileId = row.imageUrl.split("/").pop() as string;
-    const opened = await this.files.open(fileId);
+    const opened = await this.files.open(user.wid, fileId);
     if (!opened) throw new NotFoundException("Image file is missing");
     const bytes = opened.bytes ?? (await streamToBuffer(opened.stream));
     const turned = await sharp(bytes).rotate(90).png().toBuffer();
@@ -221,6 +221,37 @@ export class ScansService {
     });
   }
 
+  async preview(user: AuthUser, file: Express.Multer.File) {
+    if (!file) throw new BadRequestException("Choose a card image");
+    const mime = file.mimetype || "application/octet-stream";
+    const named = file.originalname.toLowerCase();
+    const allowed = mime === "image/jpeg" || mime === "image/png" || mime === "image/webp" || mime === "application/pdf" || /\.(jpe?g|png|webp|pdf)$/.test(named);
+    if (!allowed) throw new BadRequestException("Use a JPG, PNG, WEBP, or PDF");
+    const isPdf = mime.includes("pdf") || named.endsWith(".pdf");
+    let note = "";
+    let imageUrl = "";
+    let text = "";
+    let engine = "none";
+    if (isPdf) {
+      const stored = await this.files.save(user.wid, file.buffer, "application/pdf");
+      imageUrl = stored.url;
+      text = await pdfText(file.buffer);
+      engine = text ? "pdf-text" : "none";
+      note = text ? "Text was extracted from the PDF." : "No text layer was found. Enter the fields manually.";
+    } else {
+      const prepared = await prepareImage(file.buffer);
+      note = prepared.note;
+      const stored = await this.files.save(user.wid, prepared.bytes, "image/png");
+      imageUrl = stored.url;
+      const ocr = await recognize(prepared.bytes, "image/png", "eng");
+      text = ocr.text;
+      engine = ocr.engine;
+      if (!text) note = `${note} OCR returned no text. Check the image or type the fields.`;
+    }
+    const fields = parseCardText(text);
+    return { imageUrl, kind: isPdf ? "pdf" : "image", fields, extras: cardExtras(text, fields), rawText: text, engine, note };
+  }
+
   private async duplicate(workspaceId: string, fields: ParsedCard, bytes: Buffer) {
     const hash = createHash("sha256").update(bytes).digest("hex");
     if (fields.email) {
@@ -240,6 +271,24 @@ export class ScansService {
     if (!row) throw new NotFoundException("Scan not found");
     return row;
   }
+}
+
+function cardExtras(text: string, fields: ParsedCard) {
+  const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const faxLine = lines.find((line) => /\bfax\b/i.test(line));
+  const fax = faxLine?.match(/(?:\+?\d[\d\s().-]{7,}\d)/)?.[0] ?? "";
+  const nickLine = lines.find((line) => /\b(nickname|aka)\b/i.test(line));
+  const nickname = nickLine ? nickLine.replace(/.*\b(?:nickname|aka)\b[:\s]*/i, "").trim() : "";
+  const birthday = lines.find((line) => /\b(birthday|born)\b/i.test(line))?.match(/\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}/)?.[0] ?? "";
+  const source = fields.nameEn || (fields.name && !/^[\u4e00-\u9fff]/.test(fields.name) ? fields.name : "");
+  const parts = source.split(/\s+/).filter(Boolean);
+  return {
+    firstName: parts.length > 1 ? parts.slice(0, -1).join(" ") : parts[0] || "",
+    lastName: parts.length > 1 ? parts[parts.length - 1] : "",
+    fax,
+    nickname,
+    birthday,
+  };
 }
 
 function streamToBuffer(stream?: NodeJS.ReadableStream) {
@@ -281,6 +330,12 @@ export class ScansController {
   @UseInterceptors(FilesInterceptor("files", 20, { limits: { fileSize: 12 * 1024 * 1024 } }))
   create(@CurrentUser() user: AuthUser, @UploadedFiles() files: Express.Multer.File[], @Body("language") language?: string) {
     return this.scans.ingest(user, files ?? [], language || "eng");
+  }
+
+  @Post("preview")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 12 * 1024 * 1024 } }))
+  preview(@CurrentUser() user: AuthUser, @UploadedFile() file: Express.Multer.File) {
+    return this.scans.preview(user, file);
   }
 
   @Patch(":id")

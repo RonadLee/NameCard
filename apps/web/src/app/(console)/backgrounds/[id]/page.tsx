@@ -26,8 +26,8 @@ export default function BackgroundEditorPage() {
   const cards = useQuery({ queryKey: ["cards", false], queryFn: () => api<Card[]>("/cards") });
   const rows = useQuery({ queryKey: ["backgrounds"], queryFn: () => api<VirtualBackground[]>("/backgrounds") });
   const current = rows.data?.find((row) => row.id === params.id);
-  const [name, setName] = useState("Alex Chen");
-  const [jobTitle, setJobTitle] = useState("Marketing Manager");
+  const [name, setName] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
   const [cardId, setCardId] = useState("");
   const [accent, setAccent] = useState("#1aa3e8");
   const [gradient, setGradient] = useState(presets[0]);
@@ -52,7 +52,7 @@ export default function BackgroundEditorPage() {
 
   useEffect(() => {
     const card = cards.data?.find((item) => item.id === cardId) ?? cards.data?.[0];
-    if (card && creating && name === "Alex Chen") {
+    if (card && creating && name === "") {
       setName(card.name);
       setJobTitle(card.jobTitle || "");
       setCardId(card.id);

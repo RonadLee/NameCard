@@ -1,8 +1,10 @@
 "use client";
 
+import { MobileSettings } from "@/components/mobile-settings";
 import { Button, controlClass, Field, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/store";
+import { useWide } from "@/lib/wide";
 import type { SessionUser, Workspace } from "@/lib/types";
 import { bytesLabel, cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -20,6 +22,7 @@ type Org = {
 };
 
 function SettingsBody() {
+  const wide = useWide();
   const params = useSearchParams();
   const initial = tabs.includes(params.get("tab") as (typeof tabs)[number]) ? (params.get("tab") as (typeof tabs)[number]) : "profile";
   const [tab, setTab] = useState<(typeof tabs)[number]>(initial);
@@ -29,8 +32,8 @@ function SettingsBody() {
   const token = useSession((state) => state.accessToken);
   const toast = useSession((state) => state.toast);
   const queryClient = useQueryClient();
-  const org = useQuery({ queryKey: ["org"], queryFn: () => api<Org>("/org") });
-  const status = useQuery({ queryKey: ["integrations"], queryFn: () => api<Record<string, unknown>>("/integrations/status") });
+  const org = useQuery({ queryKey: ["org"], queryFn: () => api<Org>("/org"), enabled: wide === true });
+  const status = useQuery({ queryKey: ["integrations"], queryFn: () => api<Record<string, unknown>>("/integrations/status"), enabled: wide === true });
   const current = org.data?.workspace ?? workspace;
 
   async function refreshSession(nextWorkspace?: Workspace) {
@@ -256,5 +259,7 @@ function Approvals({ items }: { items: Org["approvals"] }) {
 }
 
 export default function SettingsPage() {
+  const wide = useWide();
+  if (wide === false) return <Suspense fallback={null}><MobileSettings /></Suspense>;
   return <Suspense fallback={<p className="text-sm text-[#8b919a]">Loading settings…</p>}><SettingsBody /></Suspense>;
 }

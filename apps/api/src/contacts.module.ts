@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, Injectable, Module, NotFoundException, Param, Patch, Post, Query, Res, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Prisma } from "@prisma/client";
-import { IsArray, IsBoolean, IsOptional, IsString } from "class-validator";
+import { IsArray, IsBoolean, IsObject, IsOptional, IsString } from "class-validator";
 import ExcelJS from "exceljs";
 import type { Response } from "express";
 import { AuthModule } from "./auth.module";
@@ -26,11 +26,14 @@ class ContactDto {
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsArray() tags?: string[];
   @IsOptional() @IsString() groupName?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) groups?: string[];
   @IsOptional() @IsBoolean() favorite?: boolean;
   @IsOptional() @IsArray() socials?: { network: string; url: string }[];
   @IsOptional() @IsString() source?: string;
   @IsOptional() @IsString() imageUrl?: string;
   @IsOptional() @IsString() cardImageUrl?: string;
+  @IsOptional() @IsString() cardBackUrl?: string;
+  @IsOptional() @IsObject() details?: Record<string, unknown>;
 }
 
 class MergeDto {
@@ -42,6 +45,22 @@ class SharedCardDto {
   @IsString() slug: string;
 }
 
+class GroupNameDto {
+  @IsString() name: string;
+}
+
+class RenameGroupDto {
+  @IsString() from: string;
+  @IsString() to: string;
+}
+
+class IdsDto {
+  @IsArray() ids: string[];
+  @IsOptional() @IsString() groupName?: string;
+}
+
+type ContactQuery = { q?: string; tag?: string; group?: string; favorite?: string; sort?: string; scope?: string; page?: string; pageSize?: string };
+
 function clean(dto: Partial<ContactDto>): Prisma.ContactUpdateInput {
   const data: Record<string, unknown> = {};
   for (const key of ["name", "nameZh", "nameEn", "jobTitle", "department", "company", "phone", "mobile", "whatsapp", "email", "website", "address", "notes", "groupName", "favorite", "source", "imageUrl", "cardImageUrl"] as const) {
@@ -49,6 +68,17 @@ function clean(dto: Partial<ContactDto>): Prisma.ContactUpdateInput {
   }
   if (dto.tags) data.tags = dto.tags.map((tag) => tag.trim()).filter(Boolean);
   if (dto.socials) data.socials = asJson(dto.socials);
+  if (dto.groups) {
+    const groups = dto.groups.map((item) => item.trim()).filter(Boolean);
+    data.groups = groups;
+    data.groupName = dto.groupName?.trim() || groups[0] || null;
+  } else if (dto.groupName !== undefined) {
+    const name = dto.groupName.trim();
+    data.groupName = name || null;
+    if (name) data.groups = [name];
+  }
+  if (dto.cardBackUrl !== undefined) data.cardBackUrl = dto.cardBackUrl || null;
+  if (dto.details !== undefined) data.details = asJson(dto.details);
   return data;
 }
 
@@ -59,31 +89,107 @@ export class ContactsService {
     private audit: AuditService,
   ) {}
 
-  async list(user: AuthUser, query: { q?: string; tag?: string; group?: string; favorite?: string; sort?: string }) {
-    const q = query.q?.trim();
-    const rows = await this.prisma.contact.findMany({
-      where: {
-        workspaceId: user.wid,
-        favorite: query.favorite === "1" ? true : undefined,
-        groupName: query.group || undefined,
-        tags: query.tag ? { has: query.tag } : undefined,
-        OR: q
-          ? [
-              { name: { contains: q, mode: "insensitive" } },
-              { nameZh: { contains: q, mode: "insensitive" } },
-              { company: { contains: q, mode: "insensitive" } },
-              { email: { contains: q, mode: "insensitive" } },
-              { mobile: { contains: q, mode: "insensitive" } },
-              { jobTitle: { contains: q, mode: "insensitive" } },
-            ]
-          : undefined,
-      },
-      orderBy: query.sort === "name" ? { name: "asc" } : query.sort === "company" ? { company: "asc" } : { updatedAt: "desc" },
-    });
-    return rows;
+  async list(user: AuthUser, query: ContactQuery) {
+    const where = this.where(user, query);
+    const orderBy = query.sort === "name" ? { name: "asc" as const } : query.sort === "company" ? { company: "asc" as const } : query.sort === "created" ? { createdAt: "desc" as const } : { updatedAt: "desc" as const };
+    if (!query.page) return this.prisma.contact.findMany({ where, orderBy });
+    const page = Math.max(1, Number(query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 59));
+    const [items, total] = await Promise.all([
+      this.prisma.contact.findMany({ where, orderBy, skip: (page - 1) * pageSize, take: pageSize }),
+      this.prisma.contact.count({ where }),
+    ]);
+    return { items, total, page, pageSize };
+  }
+
+  async groups(user: AuthUser, scope?: string) {
+    const where: Prisma.ContactWhereInput = { workspaceId: user.wid };
+    if (scope === "mine") where.ownerId = user.sub;
+    const [workspace, all, ungrouped, rows] = await Promise.all([
+      this.prisma.workspace.findUnique({ where: { id: user.wid } }),
+      this.prisma.contact.count({ where }),
+      this.prisma.contact.count({ where: { ...where, groupName: null, groups: { isEmpty: true } } }),
+      this.prisma.contact.findMany({ where, select: { groupName: true, groups: true } }),
+    ]);
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      const names = new Set([row.groupName, ...row.groups].filter((name): name is string => Boolean(name)));
+      for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    const saved = workspace?.contactGroups ?? [];
+    const names = Array.from(new Set([...saved, ...counts.keys()])).sort((a, b) => a.localeCompare(b));
+    return { all, ungrouped, groups: names.map((name) => ({ name, count: counts.get(name) ?? 0 })) };
+  }
+
+  async createGroup(user: AuthUser, name: string) {
+    const cleanName = name.trim();
+    if (!cleanName) throw new BadRequestException("Group name is required");
+    const workspace = await this.prisma.workspace.findUnique({ where: { id: user.wid } });
+    const names = workspace?.contactGroups ?? [];
+    if (names.some((item) => item.toLowerCase() === cleanName.toLowerCase())) throw new BadRequestException("That group already exists");
+    await this.prisma.workspace.update({ where: { id: user.wid }, data: { contactGroups: [...names, cleanName] } });
+    await this.audit.log(user, "contact.group_create", "workspace", user.wid, { name: cleanName });
+    return { name: cleanName };
+  }
+
+  async renameGroup(user: AuthUser, from: string, to: string) {
+    const next = to.trim();
+    if (!next) throw new BadRequestException("Group name is required");
+    const workspace = await this.prisma.workspace.findUnique({ where: { id: user.wid } });
+    const used = await this.prisma.contact.findFirst({ where: { workspaceId: user.wid, OR: [{ groupName: from }, { groups: { has: from } }] } });
+    const names = workspace?.contactGroups ?? [];
+    if (!names.includes(from) && !used) throw new NotFoundException("Group not found");
+    const contactGroups = Array.from(new Set([...names.filter((name) => name !== from), next]));
+    await this.prisma.workspace.update({ where: { id: user.wid }, data: { contactGroups } });
+    await this.prisma.$executeRaw`
+      UPDATE "Contact"
+      SET "groups" = array_replace("groups", ${from}, ${next}),
+          "groupName" = CASE WHEN "groupName" = ${from} THEN ${next} ELSE "groupName" END
+      WHERE "workspaceId" = ${user.wid} AND (${from} = ANY("groups") OR "groupName" = ${from})
+    `;
+    await this.audit.log(user, "contact.group_rename", "workspace", user.wid, { from, to: next });
+    return { name: next };
+  }
+
+  async deleteGroup(user: AuthUser, name: string) {
+    const workspace = await this.prisma.workspace.findUnique({ where: { id: user.wid } });
+    const names = workspace?.contactGroups ?? [];
+    await this.prisma.workspace.update({ where: { id: user.wid }, data: { contactGroups: names.filter((item) => item !== name) } });
+    await this.prisma.$executeRaw`
+      UPDATE "Contact"
+      SET "groups" = array_remove("groups", ${name}),
+          "groupName" = CASE WHEN "groupName" = ${name} THEN (array_remove("groups", ${name}))[1] ELSE "groupName" END
+      WHERE "workspaceId" = ${user.wid} AND (${name} = ANY("groups") OR "groupName" = ${name})
+    `;
+    await this.audit.log(user, "contact.group_delete", "workspace", user.wid, { name });
+    return { ok: true };
+  }
+
+  async categorize(user: AuthUser, ids: string[], groupName: string) {
+    const name = groupName.trim();
+    if (!name) throw new BadRequestException("Choose a group");
+    await this.readable(user, ids);
+    const workspace = await this.prisma.workspace.findUnique({ where: { id: user.wid } });
+    const names = workspace?.contactGroups ?? [];
+    if (!names.includes(name)) await this.prisma.workspace.update({ where: { id: user.wid }, data: { contactGroups: [...names, name] } });
+    const rows = await this.prisma.contact.findMany({ where: { id: { in: ids }, workspaceId: user.wid } });
+    await this.prisma.$transaction(rows.map((row) => {
+      const groups = Array.from(new Set([...(row.groups ?? []), row.groupName, name].filter((item): item is string => Boolean(item))));
+      return this.prisma.contact.update({ where: { id: row.id }, data: { groups, groupName: row.groupName || name } });
+    }));
+    await this.audit.log(user, "contact.categorize", "contact", undefined, { count: ids.length, groupName: name });
+    return { ok: true };
+  }
+
+  async removeMany(user: AuthUser, ids: string[]) {
+    await this.readable(user, ids);
+    await this.prisma.contact.deleteMany({ where: { id: { in: ids }, workspaceId: user.wid } });
+    await this.audit.log(user, "contact.delete_many", "contact", undefined, { count: ids.length });
+    return { ok: true };
   }
 
   async create(user: AuthUser, dto: ContactDto) {
+    for (const name of groupNames(dto)) await this.rememberGroup(user, name);
     const row = await this.prisma.contact.create({
       data: { ...(clean(dto) as Prisma.ContactCreateInput), name: dto.name, workspace: { connect: { id: user.wid } }, owner: { connect: { id: user.sub } } },
     });
@@ -95,9 +201,14 @@ export class ContactsService {
   async update(user: AuthUser, id: string, dto: Partial<ContactDto>) {
     const row = await this.must(user, id);
     if (!atLeast(user.role, "MANAGER") && row.ownerId !== user.sub) throw new BadRequestException("You can only edit contacts you created");
+    for (const name of groupNames(dto)) await this.rememberGroup(user, name);
     const updated = await this.prisma.contact.update({ where: { id }, data: clean(dto) });
     await this.audit.log(user, "contact.update", "contact", id);
     return updated;
+  }
+
+  get(user: AuthUser, id: string) {
+    return this.must(user, id);
   }
 
   async remove(user: AuthUser, id: string) {
@@ -157,6 +268,15 @@ export class ContactsService {
     }
     patch.tags = Array.from(new Set([keep.tags, ...drops.map((row) => row.tags)].flat()));
     patch.favorite = keep.favorite || drops.some((row) => row.favorite);
+    const mergedGroups = Array.from(new Set([keep.groupName, ...keep.groups, ...drops.flatMap((row) => [row.groupName, ...row.groups])].filter((item): item is string => Boolean(item))));
+    if (mergedGroups.length) {
+      patch.groups = mergedGroups;
+      if (!keep.groupName) patch.groupName = mergedGroups[0];
+    }
+    if (!keep.cardBackUrl) {
+      const back = drops.map((row) => row.cardBackUrl).find(Boolean);
+      if (back) patch.cardBackUrl = back;
+    }
     const updated = await this.prisma.contact.update({ where: { id: keepId }, data: patch });
     await this.prisma.contact.deleteMany({ where: { id: { in: drops.map((row) => row.id) } } });
     await this.audit.log(user, "contact.merge", "contact", keepId, { dropped: drops.map((row) => row.id) });
@@ -190,6 +310,7 @@ export class ContactsService {
           address: row.address || null,
           notes: row.notes || null,
           groupName: row.groupName || null,
+          groups: row.groupName ? [row.groupName] : [],
           favorite: row.favorite === "true" || row.favorite === "1",
           tags: (row.tags || "").split(/[|,]/).map((tag) => tag.trim()).filter(Boolean),
           source: "import",
@@ -201,8 +322,8 @@ export class ContactsService {
     return { created };
   }
 
-  async export(user: AuthUser, format: string, res: Response) {
-    const rows = await this.prisma.contact.findMany({ where: { workspaceId: user.wid }, orderBy: { name: "asc" } });
+  async export(user: AuthUser, format: string, res: Response, query: ContactQuery = {}) {
+    const rows = await this.prisma.contact.findMany({ where: this.where(user, query), orderBy: { name: "asc" } });
     if (format === "xlsx") {
       const book = new ExcelJS.Workbook();
       const sheet = book.addWorksheet("Contacts");
@@ -225,6 +346,51 @@ export class ContactsService {
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", "attachment; filename=contacts.csv");
     res.send([header, ...lines].join("\n"));
+  }
+
+  private where(user: AuthUser, query: ContactQuery): Prisma.ContactWhereInput {
+    const q = query.q?.trim();
+    return {
+      workspaceId: user.wid,
+      ownerId: query.scope === "mine" ? user.sub : undefined,
+      favorite: query.favorite === "1" ? true : undefined,
+      tags: query.tag ? { has: query.tag } : undefined,
+      OR: q
+        ? [
+            { name: { contains: q, mode: "insensitive" } },
+            { nameZh: { contains: q, mode: "insensitive" } },
+            { nameEn: { contains: q, mode: "insensitive" } },
+            { company: { contains: q, mode: "insensitive" } },
+            { email: { contains: q, mode: "insensitive" } },
+            { mobile: { contains: q, mode: "insensitive" } },
+            { phone: { contains: q, mode: "insensitive" } },
+            { jobTitle: { contains: q, mode: "insensitive" } },
+            { address: { contains: q, mode: "insensitive" } },
+            { notes: { contains: q, mode: "insensitive" } },
+          ]
+        : undefined,
+      ...(query.group === "-"
+        ? { groupName: null, groups: { isEmpty: true } }
+        : query.group
+          ? { AND: [{ OR: [{ groupName: query.group }, { groups: { has: query.group } }] }] }
+          : {}),
+    };
+  }
+
+  private async rememberGroup(user: AuthUser, name: string) {
+    const workspace = await this.prisma.workspace.findUnique({ where: { id: user.wid } });
+    const names = workspace?.contactGroups ?? [];
+    if (names.some((item) => item.toLowerCase() === name.toLowerCase())) return;
+    await this.prisma.workspace.update({ where: { id: user.wid }, data: { contactGroups: [...names, name] } });
+  }
+
+  private async readable(user: AuthUser, ids: string[]) {
+    if (!ids.length) throw new BadRequestException("Select at least one card");
+    const rows = await this.prisma.contact.findMany({ where: { id: { in: ids }, workspaceId: user.wid } });
+    if (rows.length !== new Set(ids).size) throw new NotFoundException("Card not found");
+    if (!atLeast(user.role, "MANAGER") && rows.some((row) => row.ownerId !== user.sub)) {
+      throw new BadRequestException("You can only change cards you saved");
+    }
   }
 
   private async must(user: AuthUser, id: string) {
@@ -264,6 +430,10 @@ export class ContactsService {
   }
 }
 
+function groupNames(dto: Partial<ContactDto>) {
+  return Array.from(new Set([...(dto.groups ?? []), dto.groupName ?? ""].map((item) => item.trim()).filter(Boolean)));
+}
+
 function csv(value: string) {
   return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
@@ -293,13 +463,43 @@ export class ContactsController {
   constructor(private contacts: ContactsService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthUser, @Query("q") q?: string, @Query("tag") tag?: string, @Query("group") group?: string, @Query("favorite") favorite?: string, @Query("sort") sort?: string) {
-    return this.contacts.list(user, { q, tag, group, favorite, sort });
+  list(@CurrentUser() user: AuthUser, @Query("q") q?: string, @Query("tag") tag?: string, @Query("group") group?: string, @Query("favorite") favorite?: string, @Query("sort") sort?: string, @Query("scope") scope?: string, @Query("page") page?: string, @Query("pageSize") pageSize?: string) {
+    return this.contacts.list(user, { q, tag, group, favorite, sort, scope, page, pageSize });
+  }
+
+  @Get("groups")
+  groups(@CurrentUser() user: AuthUser, @Query("scope") scope?: string) {
+    return this.contacts.groups(user, scope);
+  }
+
+  @Post("groups")
+  createGroup(@CurrentUser() user: AuthUser, @Body() dto: GroupNameDto) {
+    return this.contacts.createGroup(user, dto.name);
+  }
+
+  @Patch("groups")
+  renameGroup(@CurrentUser() user: AuthUser, @Body() dto: RenameGroupDto) {
+    return this.contacts.renameGroup(user, dto.from, dto.to);
+  }
+
+  @Delete("groups")
+  deleteGroup(@CurrentUser() user: AuthUser, @Query("name") name: string) {
+    return this.contacts.deleteGroup(user, name);
+  }
+
+  @Post("categorize")
+  categorize(@CurrentUser() user: AuthUser, @Body() dto: IdsDto) {
+    return this.contacts.categorize(user, dto.ids, dto.groupName || "");
+  }
+
+  @Post("remove")
+  removeMany(@CurrentUser() user: AuthUser, @Body() dto: IdsDto) {
+    return this.contacts.removeMany(user, dto.ids);
   }
 
   @Get("export")
-  export(@CurrentUser() user: AuthUser, @Query("format") format: string, @Res() res: Response) {
-    return this.contacts.export(user, format || "csv", res);
+  export(@CurrentUser() user: AuthUser, @Query("format") format: string, @Query("group") group: string, @Query("scope") scope: string, @Query("q") q: string, @Res() res: Response) {
+    return this.contacts.export(user, format || "csv", res, { group, scope, q });
   }
 
   @Post()
@@ -322,6 +522,11 @@ export class ContactsController {
   @Post("from-card")
   fromCard(@CurrentUser() user: AuthUser, @Body() dto: SharedCardDto) {
     return this.contacts.saveSharedCard(user, dto.slug.trim());
+  }
+
+  @Get(":id")
+  get(@CurrentUser() user: AuthUser, @Param("id") id: string) {
+    return this.contacts.get(user, id);
   }
 
   @Patch(":id")
