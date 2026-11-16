@@ -62,6 +62,82 @@ async function main() {
   await fetch(`${base}/cards/${card.id}`, { method: "DELETE", headers });
   const pub = await fetch(`${base}/public/cards/alexchen`);
   if (!pub.ok) throw new Error(`public card ${pub.status}`);
+
+  const profile = await fetch(`${base}/auth/profile`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ title: "Marketing Manager", phone: "+1 415 555 0108" }),
+  });
+  if (!profile.ok) throw new Error(`profile ${profile.status} ${await profile.text()}`);
+
+  const badPassword = await fetch(`${base}/auth/password`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ currentPassword: "wrong-password", nextPassword: "Northwind#2027" }),
+  });
+  if (badPassword.status !== 401) throw new Error(`expected bad password 401, got ${badPassword.status}`);
+
+  const savedCard = await fetch(`${base}/contacts/from-card`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ slug: "alexchen" }),
+  });
+  if (!savedCard.ok) throw new Error(`from-card ${savedCard.status} ${await savedCard.text()}`);
+  const savedBody = (await savedCard.json()) as { id: string; name: string; alreadySaved: boolean };
+  if (savedBody.name !== "Alex Chen") throw new Error("saved card name");
+  const again = await fetch(`${base}/contacts/from-card`, { method: "POST", headers, body: JSON.stringify({ slug: "alexchen" }) });
+  const againBody = (await again.json()) as { alreadySaved: boolean };
+  if (!again.ok || !againBody.alreadySaved) throw new Error("expected duplicate card save to be recognized");
+  if (!savedBody.alreadySaved) await fetch(`${base}/contacts/${savedBody.id}`, { method: "DELETE", headers });
+
+  const contactBody = (await contact.json()) as { id: string };
+  const edited = await fetch(`${base}/contacts/${contactBody.id}`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ name: "Smoke Contact", company: "Example Updated", favorite: true }),
+  });
+  if (!edited.ok) throw new Error(`update contact ${edited.status} ${await edited.text()}`);
+  await fetch(`${base}/contacts/${contactBody.id}`, { method: "DELETE", headers });
+
+  const department = await fetch(`${base}/departments`, { method: "POST", headers, body: JSON.stringify({ name: "Smoke Department" }) });
+  if (!department.ok) throw new Error(`department ${department.status} ${await department.text()}`);
+  const departmentBody = (await department.json()) as { id: string };
+  const occupied = await fetch(`${base}/teams`, { method: "POST", headers, body: JSON.stringify({ name: "Smoke Team", departmentId: departmentBody.id }) });
+  if (!occupied.ok) throw new Error(`team ${occupied.status} ${await occupied.text()}`);
+  const occupiedBody = (await occupied.json()) as { id: string };
+  const blockedDelete = await fetch(`${base}/departments/${departmentBody.id}`, { method: "DELETE", headers });
+  if (blockedDelete.status !== 400) throw new Error(`expected occupied department 400, got ${blockedDelete.status}`);
+  await fetch(`${base}/teams/${occupiedBody.id}`, { method: "DELETE", headers });
+  const removedDepartment = await fetch(`${base}/departments/${departmentBody.id}`, { method: "DELETE", headers });
+  if (!removedDepartment.ok) throw new Error(`delete department ${removedDepartment.status}`);
+
+  const blocked = await fetch(`${base}/departments/does-not-exist`, { method: "DELETE", headers });
+  if (blocked.status !== 404) throw new Error(`expected missing department 404, got ${blocked.status}`);
+
+  const invited = await fetch(`${base}/members`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ name: "Smoke Guest", email: `smoke-${Date.now()}@northwind.example`, role: "USER" }),
+  });
+  if (!invited.ok) throw new Error(`invite ${invited.status} ${await invited.text()}`);
+  const guest = (await invited.json()) as { userId: string };
+  const demoted = await fetch(`${base}/members/${guest.userId}`, { method: "PATCH", headers, body: JSON.stringify({ role: "MANAGER" }) });
+  if (!demoted.ok) throw new Error(`role ${demoted.status} ${await demoted.text()}`);
+  const removedGuest = await fetch(`${base}/members/${guest.userId}`, { method: "DELETE", headers });
+  if (!removedGuest.ok) throw new Error(`remove member ${removedGuest.status}`);
+
+  const me = (await (await fetch(`${base}/auth/me`, { headers })).json()) as { user: { id: string; memberships: { workspace: { id: string; name: string } }[] }; workspace: { id: string } };
+  const self = await fetch(`${base}/members/${me.user.id}`, { method: "DELETE", headers });
+  if (self.status !== 400) throw new Error(`expected self-remove 400, got ${self.status}`);
+  const other = me.user.memberships.find((item) => item.workspace.id !== me.workspace.id);
+  if (!other) throw new Error("expected a second workspace on the admin account");
+  const switched = await fetch(`${base}/auth/switch`, { method: "POST", headers, body: JSON.stringify({ workspaceId: other.workspace.id }) });
+  if (!switched.ok) throw new Error(`switch ${switched.status} ${await switched.text()}`);
+  const switchedBody = (await switched.json()) as { accessToken: string; workspace: { name: string } };
+  if (switchedBody.workspace.name !== "Harbor Advisory") throw new Error(`switched to ${switchedBody.workspace.name}`);
+  const harborCards = (await (await fetch(`${base}/cards`, { headers: { Authorization: `Bearer ${switchedBody.accessToken}` } })).json()) as { name: string }[];
+  if (harborCards.some((item) => item.name === "Alex Chen")) throw new Error("workspace switch leaked cards");
+
   console.log("smoke ok");
 }
 

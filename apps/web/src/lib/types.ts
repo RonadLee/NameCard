@@ -75,6 +75,7 @@ export type SessionUser = {
   name: string;
   nameZh?: string | null;
   title?: string | null;
+  phone?: string | null;
   mfaEnabled: boolean;
   feishuOpenId?: string | null;
   feishuUnionId?: string | null;

@@ -26,7 +26,10 @@ export default function ScanPage() {
   const [language, setLanguage] = useState("eng");
   const [active, setActive] = useState<ScanItem | null>(null);
   const video = useRef<HTMLVideoElement>(null);
+  const qrVideo = useRef<HTMLVideoElement>(null);
   const [camera, setCamera] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
+  const [cardLink, setCardLink] = useState("");
 
   const ingest = useMutation({
     mutationFn: async (files: File[]) => {
@@ -42,6 +45,47 @@ export default function ScanPage() {
     },
     onError: (error) => toast(error instanceof Error ? error.message : "Scan failed", "err"),
   });
+
+  async function saveLink(raw: string) {
+    const match = raw.match(/\/c\/([A-Za-z0-9_-]+)/) ?? (/^[A-Za-z0-9_-]{4,}$/.test(raw.trim()) ? [raw.trim(), raw.trim()] : null);
+    if (!match) {
+      toast("Paste a NameCard link such as /c/alexchen", "err");
+      return;
+    }
+    const result = await api<{ name: string; alreadySaved: boolean }>("/contacts/from-card", { method: "POST", body: JSON.stringify({ slug: match[1] }) });
+    await queryClient.invalidateQueries({ queryKey: ["contacts"] });
+    toast(result.alreadySaved ? `${result.name} is already in the cardholder` : `${result.name} saved to the cardholder`);
+  }
+
+  useEffect(() => {
+    if (!qrOpen) return;
+    let stream: MediaStream | undefined;
+    let timer = 0;
+    let stopped = false;
+    void navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then((media) => {
+      stream = media;
+      if (qrVideo.current) qrVideo.current.srcObject = media;
+      const Detector = (window as unknown as { BarcodeDetector?: new (options: { formats: string[] }) => { detect: (source: HTMLVideoElement) => Promise<{ rawValue?: string }[]> } }).BarcodeDetector;
+      if (!Detector) return;
+      const detector = new Detector({ formats: ["qr_code"] });
+      timer = window.setInterval(() => {
+        if (stopped || !qrVideo.current || qrVideo.current.readyState < 2) return;
+        void detector.detect(qrVideo.current).then((codes) => {
+          const value = codes[0]?.rawValue;
+          if (!value || stopped) return;
+          stopped = true;
+          window.clearInterval(timer);
+          setQrOpen(false);
+          void saveLink(value).catch((error) => toast(error instanceof Error ? error.message : "Could not save the card", "err"));
+        }).catch(() => undefined);
+      }, 500);
+    }).catch(() => toast("Camera permission is required to scan a QR code. Paste the card link instead.", "err"));
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      stream?.getTracks().forEach((track) => track.stop());
+    };
+  }, [qrOpen, queryClient, toast]);
 
   useEffect(() => {
     if (!camera) return;
@@ -69,17 +113,29 @@ export default function ScanPage() {
   return (
     <div>
       <PageTitle title="Scan Cards" extra={<select className={`${controlClass} w-64`} value={language} onChange={(event) => setLanguage(event.target.value)}>{languages.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>} />
-      <div className="mb-6 grid gap-3 md:grid-cols-3">
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <label className="grid cursor-pointer place-items-center gap-2 rounded-2xl bg-white p-6 shadow-card">
           <Upload /> Upload image or batch
           <input className="hidden" type="file" accept="image/*,.pdf" multiple onChange={(event) => event.target.files && ingest.mutate(Array.from(event.target.files))} />
         </label>
         <button className="grid place-items-center gap-2 rounded-2xl bg-white p-6 shadow-card" onClick={() => setCamera(true)}><Camera /> Camera capture</button>
+        <button className="grid place-items-center gap-2 rounded-2xl bg-white p-6 shadow-card" onClick={() => setQrOpen(true)}>Scan a shared QR</button>
         <label className="grid cursor-pointer place-items-center gap-2 rounded-2xl bg-white p-6 shadow-card">
           PDF upload
           <input className="hidden" type="file" accept="application/pdf" multiple onChange={(event) => event.target.files && ingest.mutate(Array.from(event.target.files))} />
         </label>
       </div>
+      {qrOpen ? (
+        <div className="mb-6 rounded-2xl bg-white p-4 shadow-card">
+          <video ref={qrVideo} autoPlay playsInline muted className="max-h-[320px] w-full rounded-xl bg-black" />
+          <p className="mt-3 text-sm text-[#66707c]">Point the camera at a NameCard QR code, or paste the link.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <input className={`${controlClass} max-w-md`} placeholder="https://…/c/alexchen" value={cardLink} onChange={(event) => setCardLink(event.target.value)} />
+            <Button onClick={() => saveLink(cardLink).then(() => { setCardLink(""); setQrOpen(false); }).catch((error) => toast(error instanceof Error ? error.message : "Could not save the card", "err"))}>Save link</Button>
+            <Button variant="ghost" onClick={() => setQrOpen(false)}>Cancel</Button>
+          </div>
+        </div>
+      ) : null}
       {camera ? (
         <div className="mb-6 rounded-2xl bg-black p-3">
           <video ref={video} autoPlay playsInline className="max-h-[420px] w-full rounded-xl" />

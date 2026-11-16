@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 const password = "Northwind#2026";
 
 async function main() {
-  await prisma.workspace.deleteMany({ where: { slug: "northwind" } });
+  await prisma.workspace.deleteMany({ where: { slug: { in: ["northwind", "harbor"] } } });
   await prisma.user.deleteMany({ where: { email: { endsWith: "@northwind.example" } } });
 
   const hash = await bcrypt.hash(password, 10);
@@ -39,6 +39,9 @@ async function main() {
     await prisma.membership.create({ data: { ...member, workspaceId: workspace.id } });
   }
   await prisma.teamMember.createMany({ data: [alex, mina, sam].map((user) => ({ teamId: sales.id, userId: user.id })) });
+
+  const harbor = await prisma.workspace.create({ data: { name: "Harbor Advisory", slug: "harbor", plan: "TEAM" } });
+  await prisma.membership.create({ data: { userId: alex.id, workspaceId: harbor.id, role: "ADMIN", title: "Advisor" } });
 
   const alexCard = await prisma.card.create({
     data: {

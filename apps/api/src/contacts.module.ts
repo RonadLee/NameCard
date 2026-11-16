@@ -38,6 +38,10 @@ class MergeDto {
   @IsArray() dropIds: string[];
 }
 
+class SharedCardDto {
+  @IsString() slug: string;
+}
+
 function clean(dto: Partial<ContactDto>): Prisma.ContactUpdateInput {
   const data: Record<string, unknown> = {};
   for (const key of ["name", "nameZh", "nameEn", "jobTitle", "department", "company", "phone", "mobile", "whatsapp", "email", "website", "address", "notes", "groupName", "favorite", "source", "imageUrl", "cardImageUrl"] as const) {
@@ -102,6 +106,42 @@ export class ContactsService {
     await this.prisma.contact.delete({ where: { id } });
     await this.audit.log(user, "contact.delete", "contact", id);
     return { ok: true };
+  }
+
+  async saveSharedCard(user: AuthUser, slug: string) {
+    const card = await this.prisma.card.findFirst({
+      where: {
+        qrSlug: slug,
+        status: "ACTIVE",
+        OR: [{ visibility: "PUBLIC" }, { visibility: "TEAM", workspaceId: user.wid }],
+      },
+    });
+    if (!card) throw new NotFoundException("That card is not available to save");
+    const email = card.email?.trim();
+    const existing = email
+      ? await this.prisma.contact.findFirst({ where: { workspaceId: user.wid, email: { equals: email, mode: "insensitive" } } })
+      : await this.prisma.contact.findFirst({ where: { workspaceId: user.wid, name: card.name, company: card.company } });
+    if (existing) return { ...existing, alreadySaved: true };
+    const created = await this.create(user, {
+      name: card.name,
+      nameZh: card.nameZh ?? "",
+      nameEn: card.nameEn ?? "",
+      jobTitle: card.jobTitle ?? "",
+      department: card.department ?? "",
+      company: card.company ?? "",
+      phone: card.phone ?? "",
+      mobile: card.mobile ?? "",
+      whatsapp: card.whatsapp ?? "",
+      email: card.email ?? "",
+      website: card.website ?? "",
+      address: card.address ?? "",
+      notes: card.notes ?? "",
+      tags: ["Shared"],
+      source: "qr",
+      socials: Array.isArray(card.socials) ? (card.socials as { network: string; url: string }[]) : [],
+    });
+    await this.prisma.analyticsEvent.create({ data: { workspaceId: card.workspaceId, type: "SCAN", cardId: card.id } });
+    return { ...created, alreadySaved: false };
   }
 
   async merge(user: AuthUser, keepId: string, dropIds: string[]) {
@@ -277,6 +317,11 @@ export class ContactsController {
   @Post("merge")
   merge(@CurrentUser() user: AuthUser, @Body() dto: MergeDto) {
     return this.contacts.merge(user, dto.keepId, dto.dropIds);
+  }
+
+  @Post("from-card")
+  fromCard(@CurrentUser() user: AuthUser, @Body() dto: SharedCardDto) {
+    return this.contacts.saveSharedCard(user, dto.slug.trim());
   }
 
   @Patch(":id")

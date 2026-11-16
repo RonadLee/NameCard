@@ -5,6 +5,7 @@ import {
   Get,
   Injectable,
   Module,
+  Patch,
   Post,
   Req,
   Res,
@@ -46,6 +47,33 @@ class MfaDto {
 class SwitchDto {
   @IsString()
   workspaceId: string;
+}
+
+class ProfileDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  nameZh?: string;
+
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+}
+
+class PasswordDto {
+  @IsString()
+  currentPassword: string;
+
+  @IsString()
+  @MinLength(8)
+  nextPassword: string;
 }
 
 @Injectable()
@@ -91,7 +119,7 @@ export class AuthService {
         throw new UnauthorizedException("Authentication code is incorrect");
       }
     }
-    const membership = await this.prisma.membership.findFirst({ where: { userId: user.id }, include: { workspace: true } });
+    const membership = await this.prisma.membership.findFirst({ where: { userId: user.id }, include: { workspace: true }, orderBy: { workspace: { createdAt: "asc" } } });
     if (!membership) throw new UnauthorizedException("No workspace is assigned to this account");
     const pair = await this.tokenPair(user, membership.workspaceId, membership.role);
     this.setCookie(res, pair.refresh);
@@ -105,7 +133,7 @@ export class AuthService {
     if (!raw) throw new UnauthorizedException();
     const row = await this.prisma.refreshToken.findUnique({ where: { tokenHash: sha256(raw) }, include: { user: true } });
     if (!row || row.expiresAt.getTime() < Date.now()) throw new UnauthorizedException();
-    const membership = await this.prisma.membership.findFirst({ where: { userId: row.userId }, include: { workspace: true } });
+    const membership = await this.prisma.membership.findFirst({ where: { userId: row.userId }, include: { workspace: true }, orderBy: { workspace: { createdAt: "asc" } } });
     if (!membership) throw new UnauthorizedException();
     await this.prisma.refreshToken.delete({ where: { id: row.id } });
     const pair = await this.tokenPair(row.user, membership.workspaceId, membership.role);
@@ -144,6 +172,28 @@ export class AuthService {
     const totp = new OTPAuth.TOTP({ issuer: "NameCard", label: user.email, secret, digits: 6, period: 30 });
     await this.prisma.user.update({ where: { id: user.sub }, data: { mfaSecretEnc: encrypt(secret.base32), mfaEnabled: false } });
     return { otpauth: totp.toString(), secret: secret.base32 };
+  }
+
+  async updateProfile(user: AuthUser, dto: ProfileDto) {
+    if (dto.name !== undefined && !dto.name.trim()) throw new BadRequestException("Name is required");
+    const data: { name?: string; nameZh?: string; title?: string; phone?: string } = {};
+    if (dto.name !== undefined) data.name = dto.name.trim();
+    if (dto.nameZh !== undefined) data.nameZh = dto.nameZh.trim();
+    if (dto.title !== undefined) data.title = dto.title.trim();
+    if (dto.phone !== undefined) data.phone = dto.phone.trim();
+    await this.prisma.user.update({ where: { id: user.sub }, data });
+    await this.audit.log(user, "auth.profile", "user", user.sub);
+    return this.me(user);
+  }
+
+  async changePassword(user: AuthUser, dto: PasswordDto) {
+    const row = await this.prisma.user.findUnique({ where: { id: user.sub } });
+    if (!row || !(await bcrypt.compare(dto.currentPassword, row.passwordHash))) {
+      throw new UnauthorizedException("Current password is incorrect");
+    }
+    await this.prisma.user.update({ where: { id: user.sub }, data: { passwordHash: await bcrypt.hash(dto.nextPassword, 10) } });
+    await this.audit.log(user, "auth.password_changed", "user", user.sub);
+    return { ok: true };
   }
 
   async enableMfa(user: AuthUser, code: string) {
@@ -219,6 +269,19 @@ export class AuthController {
   @UseGuards(AuthGuard)
   me(@CurrentUser() user: AuthUser) {
     return this.auth.me(user);
+  }
+
+  @Patch("profile")
+  @UseGuards(AuthGuard)
+  profile(@CurrentUser() user: AuthUser, @Body() dto: ProfileDto) {
+    return this.auth.updateProfile(user, dto);
+  }
+
+  @Post("password")
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 8, ttl: 60000 } })
+  password(@CurrentUser() user: AuthUser, @Body() dto: PasswordDto) {
+    return this.auth.changePassword(user, dto);
   }
 
   @Post("mfa/setup")
